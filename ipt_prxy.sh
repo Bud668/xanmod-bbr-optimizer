@@ -3519,6 +3519,21 @@ get_server_info() {
             SERVER_COUNTRY_NAME="${_cn:-$_cc}"
             SERVER_CITY="${_city:-Unknown}"
         fi
+    else
+        local _ip
+        _ip=$(get_public_ip 2>/dev/null || true)
+        if [[ "$_ip" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+            SERVER_IP="$_ip"
+            get_geo_info "$_ip" || true
+            mkdir -p "$WORK_DIR"
+            {
+                printf 'SERVER_IP=%s\n'           "$SERVER_IP"
+                printf 'SERVER_COUNTRY_CODE=%s\n' "$SERVER_COUNTRY_CODE"
+                printf 'SERVER_COUNTRY_NAME=%s\n' "$SERVER_COUNTRY_NAME"
+                printf 'SERVER_CITY=%s\n'         "$SERVER_CITY"
+            } > "$CACHE_FILE"
+            chmod 600 "$CACHE_FILE"
+        fi
     fi
 }
 
