@@ -1,4 +1,5 @@
 #!/bin/bash
+# https://github.com/Bud668/VPS-Proxy-Suite
 # ==============================================================================
 # Server & Proxy Manager (统一版)
 # System Guardian v10.1.0 + Proxy Manager v13.2
