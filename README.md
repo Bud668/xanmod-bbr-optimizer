@@ -22,9 +22,14 @@
 bash <(curl -sL https://raw.githubusercontent.com/Bud668/VPS-Proxy-Suite/main/ipt_prxy.sh)
 ```
 
-**wget（无 curl 的新机器）：**
+**wget（备用）：**
 ```bash
 bash <(wget -qO- https://raw.githubusercontent.com/Bud668/VPS-Proxy-Suite/main/ipt_prxy.sh)
+```
+
+**通用（curl / wget / 自动安装，裸系统也能用）：**
+```bash
+bash <(curl -sL https://raw.githubusercontent.com/Bud668/VPS-Proxy-Suite/main/ipt_prxy.sh 2>/dev/null || wget -qO- https://raw.githubusercontent.com/Bud668/VPS-Proxy-Suite/main/ipt_prxy.sh 2>/dev/null || (apt-get install -y curl -qq >/dev/null 2>&1 && curl -sL https://raw.githubusercontent.com/Bud668/VPS-Proxy-Suite/main/ipt_prxy.sh))
 ```
 
 > 需要 root 权限，支持 Debian 10+ / Ubuntu 20.04+
