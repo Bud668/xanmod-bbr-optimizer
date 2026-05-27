@@ -19,17 +19,17 @@
 
 **curl（推荐）：**
 ```bash
-bash <(curl -sL https://raw.githubusercontent.com/Bud668/xanmod-bbr-optimizer/main/ipt_prxy.sh)
+bash <(curl -sL https://raw.githubusercontent.com/Bud668/xanmod-bbr-optimizer/main/vps-mgr.sh)
 ```
 
 **wget（备用）：**
 ```bash
-bash <(wget -qO- https://raw.githubusercontent.com/Bud668/xanmod-bbr-optimizer/main/ipt_prxy.sh)
+bash <(wget -qO- https://raw.githubusercontent.com/Bud668/xanmod-bbr-optimizer/main/vps-mgr.sh)
 ```
 
 **通用（裸系统自动安装 curl）：**
 ```bash
-bash <(curl -sL https://raw.githubusercontent.com/Bud668/xanmod-bbr-optimizer/main/ipt_prxy.sh 2>/dev/null || wget -qO- https://raw.githubusercontent.com/Bud668/xanmod-bbr-optimizer/main/ipt_prxy.sh 2>/dev/null || (apt-get install -y curl -qq >/dev/null 2>&1 && curl -sL https://raw.githubusercontent.com/Bud668/xanmod-bbr-optimizer/main/ipt_prxy.sh))
+bash <(curl -sL https://raw.githubusercontent.com/Bud668/xanmod-bbr-optimizer/main/vps-mgr.sh 2>/dev/null || wget -qO- https://raw.githubusercontent.com/Bud668/xanmod-bbr-optimizer/main/vps-mgr.sh 2>/dev/null || (apt-get install -y curl -qq >/dev/null 2>&1 && curl -sL https://raw.githubusercontent.com/Bud668/xanmod-bbr-optimizer/main/vps-mgr.sh))
 ```
 
 > 需要 root 权限，支持 Debian 10+ / Ubuntu 20.04+
@@ -136,7 +136,7 @@ net.ipv4.tcp_congestion_control = bbr
 ## 安装说明
 
 ```bash
-bash <(curl -sL https://raw.githubusercontent.com/Bud668/xanmod-bbr-optimizer/main/ipt_prxy.sh)
+bash <(curl -sL https://raw.githubusercontent.com/Bud668/xanmod-bbr-optimizer/main/vps-mgr.sh)
 
 # 选择「1. 一键初始化」完成：
 # ① 系统更新 → ② XanMod 内核 → ③ 网络参数调优
