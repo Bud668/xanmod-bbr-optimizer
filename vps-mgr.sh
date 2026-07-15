@@ -2527,7 +2527,6 @@ do_quick_init() {
         _write_disable_ipv6_conf    # 内部已含 _ipv6_ifaces_off
         echo -e "  ${GREEN}✓${NC} IPv6: ${RED}已禁用${NC}（含 interfaces IPv6 配置）"
     fi
-    _purge_exim4
 
     # ── [2/5] 系统更新 & 依赖安装 ───────────────────────────
     echo -e "\n${L_BLUE}── [2/5] 系统更新 & 依赖安装 ──────────────────────────${NC}"
@@ -2601,6 +2600,11 @@ do_quick_init() {
             echo -e "  ${YELLOW}  建议手动: apt-get install -y ${_to_install[*]}${NC}"
         fi
     fi
+
+    # 必须放在依赖安装之后：上面装的 at 带 "Recommends: default-mta"，apt 默认装
+    # Recommends，于是 exim4-daemon-light 会被一并拉回来 —— 早于此处卸载等于白卸。
+    # 卸掉不影响 at：Recommends 是软依赖，atd 与防火墙安全网的定时回滚都不需要邮件。
+    _purge_exim4
 
     # 依赖装完后获取服务器 IP 和地理信息并写缓存，后续启动直接读缓存无需 curl
     if command -v curl &>/dev/null; then
