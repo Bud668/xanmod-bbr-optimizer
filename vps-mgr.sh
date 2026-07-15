@@ -452,10 +452,33 @@ _tg_input_tokens() {
     printf "  ${C_CYAN}正在启动各监控服务...${C_RESET}\n"
     _setup_ssh_tg_monitor || true
     if [[ -n "$_hub" ]]; then
+        # 先发确认：服务未装时也能立刻验证话题 ID 是否正确
+        printf "  ${C_CYAN}正在验证话题群各通道...${C_RESET}\n"
+        _tg_notify_configured "$_srv"
         [[ -n "$_th_mon" && -f "$REALM_BIN" ]] && { setup_config || true; }
         [[ -n "$_th_qt" ]] && grep -q '^[0-9]' "$QUOTA_CONFIG" 2>/dev/null && { install_quota_services || true; }
     fi
     return 0
+}
+
+# 配置保存后逐通道发确认，当场暴露话题 ID 填错——否则要等对应服务真触发才发现
+_tg_notify_configured() {
+    local _srv="$1" _entry _ch _label _msg _ts
+    _ts=$(TZ="$TZ_DEFAULT" date '+%Y-%m-%d %H:%M:%S')
+    for _entry in "monitor:Realm 监控" "quota:流量配额" "ddns:DDNS"; do
+        _ch="${_entry%%:*}"; _label="${_entry#*:}"
+        _tg_resolve_channel "$_ch"
+        [[ -z "$TG_BOT_TOKEN" || -z "$TG_CHAT_ID" || -z "$TG_THREAD_ID" ]] && continue
+        printf "  %s: " "$_label"
+        _msg="✅ <b>${_label} 通道配置成功</b>
+👤 主机: ${_srv}
+🕒 时间: ${_ts}"
+        if send_telegram "$_msg" 2>/dev/null; then
+            printf "${C_GREEN}✓ 已送达话题 %s${C_RESET}\n" "$TG_THREAD_ID"
+        else
+            printf "${C_RED}✗ 失败（检查话题 ID 是否正确）${C_RESET}\n"
+        fi
+    done
 }
 
 # 测试单个推送目标；$1=标签 $2=token $3=chat $4=话题ID(可空) $5=时间戳
