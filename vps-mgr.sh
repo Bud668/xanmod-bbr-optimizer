@@ -16,7 +16,7 @@ readonly SNELL_VERSION_OVERRIDE="v5.0.1"
 # SECTION 1: 全局常量
 # ==============================================================================
 
-readonly SCRIPT_VERSION="1.2.1"
+readonly SCRIPT_VERSION="1.2.2"
 readonly SELF_REPO="springvip/vps-mgr"
 readonly TZ_DEFAULT="Asia/Shanghai"
 readonly WORK_DIR="/opt/proxy-manager"
@@ -4566,8 +4566,16 @@ check_realm_dead_forwards() {
     done
 
     msg_success "已删除 ${#dead_indices[@]} 条失效规则。"
-    msg_warn "配置已更新，需重启 Realm 才生效 —— 主菜单 [11] 重启 Realm（会断开现有连接，可挑时机）"
+    _realm_restart_hint
 
+}
+
+# 改完规则后的提示。走 msg + log_message 而非 msg_warn：要红字醒目，但日志里不能混进
+# 颜色转义码（log_message 原样落盘）。
+_realm_restart_hint() {
+    local _m="配置已更新，需重启 Realm 才生效 —— 主菜单 [11] 重启 Realm（会断开现有连接，可挑时机）"
+    msg "${C_RED}[警告] ${_m}${C_RESET}"
+    log_message "WARN" "$_m"
 }
 
 # 配置文件是否比 realm 进程更新 —— 即改了规则却还没重启，转发仍按旧配置跑。
@@ -4830,7 +4838,7 @@ add_realm_forward_advanced() {
         if [[ "$_restart_mode" == "auto" ]]; then
             _realm_safe_restart
         else
-            msg_warn "配置已更新，需重启 Realm 才生效 —— 主菜单 [11] 重启 Realm（会断开现有连接，可挑时机）"
+            _realm_restart_hint
         fi
     fi
 }
@@ -4911,7 +4919,7 @@ add_realm_forward() {
     if [[ "$_restart_mode" == "auto" ]]; then
         _realm_safe_restart
     else
-        msg_warn "配置已更新，需重启 Realm 才生效 —— 主菜单 [11] 重启 Realm（会断开现有连接，可挑时机）"
+        _realm_restart_hint
     fi
 }
 
@@ -4969,7 +4977,7 @@ delete_realm_forward() {
     close_firewall_port "$deleted_port"
     
     msg_success "规则已删除。"
-    msg_warn "配置已更新，需重启 Realm 才生效 —— 主菜单 [11] 重启 Realm（会断开现有连接，可挑时机）"
+    _realm_restart_hint
 }
 
 
