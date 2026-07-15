@@ -926,7 +926,30 @@ _persist_iptables() {
 # ==============================================================================
 
 # 写入 IPv6 禁用配置并同步清理 /etc/sysctl.conf 残留条目
+# 注释掉 /etc/network/interfaces 里的 IPv6 stanza。
+# 不做的话：开机 ifup 去配 IPv6 地址、撞上 disable_ipv6=1 而失败，networking.service
+# 永久 failed（IPv4 排在前面仍能起来，但故障列表被这条噪音长期占据）。
+# 用标记前缀而非删除 —— 重新启用时要靠这些行读回静态地址。
+_ipv6_ifaces_off() {
+    local f=/etc/network/interfaces
+    [[ -f "$f" ]] || return 0
+    grep -qE '^[[:space:]]*iface[[:space:]]+[^[:space:]]+[[:space:]]+inet6' "$f" || return 0
+    local t; t=$(mktemp) || return 0
+    awk '
+        /^[[:space:]]*iface[[:space:]]+[^[:space:]]+[[:space:]]+inet6/ { blk=1; print "#V6OFF# " $0; next }
+        blk && /^[[:space:]]+[^[:space:]]/                            { print "#V6OFF# " $0; next }
+        { blk=0; print }
+    ' "$f" > "$t" && cat "$t" > "$f"   # cat 而非 mv：保住原 inode 和权限
+    rm -f "$t"
+}
+
+_ipv6_ifaces_on() {
+    [[ -f /etc/network/interfaces ]] || return 0
+    sed -i 's/^#V6OFF# //' /etc/network/interfaces
+}
+
 _write_disable_ipv6_conf() {
+    _ipv6_ifaces_off
     cat > /etc/sysctl.d/99-disable-ipv6.conf <<'IPVCEOF'
 net.ipv6.conf.all.disable_ipv6 = 1
 net.ipv6.conf.default.disable_ipv6 = 1
@@ -1575,7 +1598,8 @@ toggle_ipv6() {
         echo -e "当前状态: ${RED}已禁用${NC}"
         echo -e "${GREEN}正在开启 IPv6...${NC}"
         
-        # 1. 删除禁用配置
+        # 1. 删除禁用配置（先解开 interfaces 里的 IPv6 stanza，下面第 4 步要从中读回静态地址）
+        _ipv6_ifaces_on
         rm -f /etc/sysctl.d/99-disable-ipv6.conf
         if [ -f "/etc/sysctl.conf" ]; then
             sed -i '/net.ipv6.conf.all.disable_ipv6/d' /etc/sysctl.conf
