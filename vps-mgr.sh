@@ -930,17 +930,19 @@ _persist_iptables() {
 # 不做的话：开机 ifup 去配 IPv6 地址、撞上 disable_ipv6=1 而失败，networking.service
 # 永久 failed（IPv4 排在前面仍能起来，但故障列表被这条噪音长期占据）。
 # 用标记前缀而非删除 —— 重新启用时要靠这些行读回静态地址。
+# 返回 0 = 确实注释了内容；返回 1 = 无需改动（调用方若不关心须加 || true，本脚本 set -e）
 _ipv6_ifaces_off() {
     local f=/etc/network/interfaces
-    [[ -f "$f" ]] || return 0
-    grep -qE '^[[:space:]]*iface[[:space:]]+[^[:space:]]+[[:space:]]+inet6' "$f" || return 0
-    local t; t=$(mktemp) || return 0
+    [[ -f "$f" ]] || return 1
+    grep -qE '^[[:space:]]*iface[[:space:]]+[^[:space:]]+[[:space:]]+inet6' "$f" || return 1
+    local t; t=$(mktemp) || return 1
     awk '
         /^[[:space:]]*iface[[:space:]]+[^[:space:]]+[[:space:]]+inet6/ { blk=1; print "#V6OFF# " $0; next }
         blk && /^[[:space:]]+[^[:space:]]/                            { print "#V6OFF# " $0; next }
         { blk=0; print }
     ' "$f" > "$t" && cat "$t" > "$f"   # cat 而非 mv：保住原 inode 和权限
     rm -f "$t"
+    return 0
 }
 
 _ipv6_ifaces_on() {
@@ -963,7 +965,7 @@ _purge_exim4() {
 }
 
 _write_disable_ipv6_conf() {
-    _ipv6_ifaces_off
+    _ipv6_ifaces_off || true
     cat > /etc/sysctl.d/99-disable-ipv6.conf <<'IPVCEOF'
 net.ipv6.conf.all.disable_ipv6 = 1
 net.ipv6.conf.default.disable_ipv6 = 1
@@ -2515,7 +2517,11 @@ do_quick_init() {
         _write_disable_ipv6_conf
         echo -e "  ${GREEN}✓${NC} IPv6: ${RED}已禁用${NC}"
     fi
-    # 放在 if 外：IPv6 已禁用时上面会跳过，但 exim4 仍可能存在（如新装机重跑初始化）
+    # 以下两项放在 if 外：上面只在「首次禁用」时执行，而早已禁用 IPv6 的机器同样需要
+    # 校正 —— 它们都幂等，重复执行无害。
+    if _ipv6_ifaces_off; then
+        echo -e "  ${GREEN}✓${NC} 已注释 /etc/network/interfaces 的 IPv6 配置（否则 ifup 失败）"
+    fi
     _purge_exim4
 
     # ── [2/5] 系统更新 & 依赖安装 ───────────────────────────
