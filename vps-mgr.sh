@@ -8475,7 +8475,8 @@ show_menu() {
     [[ -f "${TG_CONF:-}" ]] && _srv_name=$(grep -E '^SERVER_NAME=' "$TG_CONF" 2>/dev/null | head -1 | cut -d= -f2- | sed "s/^['\"]//;s/['\"]$//" || true)
     printf "${C_BLUE}:: 服务器信息 ::${C_RESET}\n"
     if [[ -n "$_srv_name" ]]; then
-        printf "   服务器: %s%s\n" "$flag" "$_srv_name"
+        # SERVER_NAME 按约定自带国旗（手动填如 🇭🇰SR_HK_Std，自动生成也含），不再补
+        printf "   服务器: %s\n" "$_srv_name"
     else
         printf "   服务器: %s %s, %s\n" "$flag" "$SERVER_COUNTRY_NAME" "$SERVER_CITY"
     fi
