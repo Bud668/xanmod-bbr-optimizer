@@ -8475,8 +8475,13 @@ show_menu() {
     [[ -f "${TG_CONF:-}" ]] && _srv_name=$(grep -E '^SERVER_NAME=' "$TG_CONF" 2>/dev/null | head -1 | cut -d= -f2- | sed "s/^['\"]//;s/['\"]$//" || true)
     printf "${C_BLUE}:: 服务器信息 ::${C_RESET}\n"
     if [[ -n "$_srv_name" ]]; then
-        # SERVER_NAME 按约定自带国旗（手动填如 🇭🇰SR_HK_Std，自动生成也含），不再补
-        printf "   服务器: %s\n" "$_srv_name"
+        # 与 TG 推送的 _srv_display 同规则：纯 ASCII 名补旗帜和 #，已含 emoji 的原样输出
+        # （该函数在 SSH 监控脚本的 heredoc 内，独立运行故无法共用，此处按同约定内联）
+        if [[ "$_srv_name" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+            printf "   服务器: %s#%s\n" "${flag:+${flag} }" "${_srv_name//-/_}"
+        else
+            printf "   服务器: %s\n" "$_srv_name"
+        fi
     else
         printf "   服务器: %s %s, %s\n" "$flag" "$SERVER_COUNTRY_NAME" "$SERVER_CITY"
     fi
