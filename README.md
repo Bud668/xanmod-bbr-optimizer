@@ -12,19 +12,11 @@ All configuration is entered interactively at runtime. No credentials are stored
 
 ## Usage
 
-Run as root on a fresh server. This installs `curl` first, so it works on a
-minimal image where no downloader is present:
+Run as root. Installs `curl` if it's missing, so this works on a minimal image
+where no downloader is present:
 
 ```bash
-apt-get update -qq && apt-get install -y -qq curl && curl -fsSL https://raw.githubusercontent.com/springvip/vps-mgr/main/vps-mgr.sh -o vps-mgr.sh && chmod +x vps-mgr.sh && ./vps-mgr.sh
-```
-
-If `curl` is already available:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/springvip/vps-mgr/main/vps-mgr.sh -o vps-mgr.sh
-chmod +x vps-mgr.sh
-./vps-mgr.sh
+command -v curl >/dev/null || { echo "Installing curl (a few seconds)..."; apt-get update -qq && apt-get install -y -qq curl; }; echo "Downloading..."; curl -fsSL https://raw.githubusercontent.com/springvip/vps-mgr/main/vps-mgr.sh -o vps-mgr.sh && chmod +x vps-mgr.sh && ./vps-mgr.sh
 ```
 
 The script is menu-driven — run it and pick an option. On a new server, start
