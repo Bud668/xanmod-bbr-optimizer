@@ -8767,11 +8767,14 @@ show_menu() {
         done < <(parse_snell_nodes)
     fi
 
-    if _sbx_any ss; then
+    if _sbx_any ss || _sbx_any socks || _sbx_any hy2; then
         printf "%b\n" "$_CFG_SEP"
-        printf "${C_BLUE}:: sing-box SS 配置 ::${C_RESET}\n"
-        local _ssf
-        for _ssf in "$SBX_ST"/ss-*.env; do [[ -e "$_ssf" ]] || continue; _sbx_show_one "$_ssf"; done
+        printf "${C_BLUE}:: sing-box 节点配置 ::${C_RESET}\n"
+        local _sbf
+        for _sbf in "$SBX_ST"/ss-*.env "$SBX_ST"/socks-*.env "$SBX_ST"/hy2-*.env; do
+            [[ -e "$_sbf" ]] || continue
+            _sbx_show_one "$_sbf"
+        done
     fi
 
     if [[ -f "$REALM_CONFIG_FILE" ]] && validate_realm_config "$REALM_CONFIG_FILE"; then
