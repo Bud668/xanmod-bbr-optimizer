@@ -8475,10 +8475,10 @@ show_menu() {
     [[ -f "${TG_CONF:-}" ]] && _srv_name=$(grep -E '^SERVER_NAME=' "$TG_CONF" 2>/dev/null | head -1 | cut -d= -f2- | sed "s/^['\"]//;s/['\"]$//" || true)
     printf "${C_BLUE}:: 服务器信息 ::${C_RESET}\n"
     if [[ -n "$_srv_name" ]]; then
-        # 与 TG 推送的 _srv_display 同规则：纯 ASCII 名补旗帜和 #，已含 emoji 的原样输出
-        # （该函数在 SSH 监控脚本的 heredoc 内，独立运行故无法共用，此处按同约定内联）
+        # 纯 ASCII 名补旗帜，已含 emoji 的原样输出。不加 TG 推送里那个 # ——
+        # 那是 Telegram 话题标签（可点击筛选），终端里没有意义
         if [[ "$_srv_name" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-            printf "   服务器: %s#%s\n" "${flag:+${flag} }" "${_srv_name//-/_}"
+            printf "   服务器: %s%s\n" "${flag:+${flag} }" "${_srv_name//-/_}"
         else
             printf "   服务器: %s\n" "$_srv_name"
         fi
