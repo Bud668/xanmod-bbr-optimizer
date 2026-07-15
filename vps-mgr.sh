@@ -447,7 +447,7 @@ _tg_input_tokens() {
             *)    printf "  ${C_CYAN}↻ 重新粘贴${C_RESET}\n"; continue ;;
         esac
     done
-    _write_tg_conf "$_new_tok" "$_new_chat" "$_srv" "" "" "$_hub" "$_th_mon" "$_th_qt" "$_th_dd"
+    _write_tg_conf "$_new_tok" "$_new_chat" "$_srv" "$_hub" "$_th_mon" "$_th_qt" "$_th_dd"
     printf "  ${C_GREEN}✓ 已保存${C_RESET}\n"
     printf "  ${C_CYAN}正在启动各监控服务...${C_RESET}\n"
     _setup_ssh_tg_monitor || true
@@ -472,7 +472,7 @@ _tg_test_one() {
     [[ -n "$_th" ]] && printf 'data = "message_thread_id=%s"\n' "$_th" >> "$_cfg"
     _resp=$(curl -K "$_cfg" -s 2>/dev/null || true); rm -f "$_cfg"
     if printf '%s' "$_resp" | grep -q '"ok":true'; then
-        printf "${C_GREEN}✓ 成功${C_RESET}%s\n" "${_th:+  ${C_DIM}(话题 ${_th})${C_RESET}}"
+        printf "${C_GREEN}✓ 成功${C_RESET}%b\n" "${_th:+  ${C_DIM}(话题 ${_th})${C_RESET}}"
     else
         printf "${C_RED}✗ 失败${C_RESET}  ${C_DIM}%s${C_RESET}\n" \
             "$(printf '%s' "$_resp" | grep -oP '"description":"\K[^"]+' || echo '无响应')"
@@ -507,10 +507,10 @@ _do_tg_config() {
         printf "  ${C_BLUE}[ SSH ]${C_RESET}   %b   ${C_DIM}独立群${C_RESET}\n" "$_ssh_tg_st"
         printf "    Chat   : %s\n\n" "${_chat:-未设置}"
 
-        printf "  ${C_BLUE}[ 话题群 ]${C_RESET}  %s\n" "${_hub:-${C_YELLOW}未设置${C_RESET}}"
-        printf "    ├ Realm 监控 %b  话题 %s\n" "$_relay_st" "${_th_mon:-${C_YELLOW}未设置${C_RESET}}"
-        printf "    ├ 流量配额   %b  话题 %s\n" "$_quota_st" "${_th_qt:-${C_YELLOW}未设置${C_RESET}}"
-        printf "    └ DDNS          话题 %s\n" "${_th_dd:-${C_YELLOW}未设置${C_RESET}}"
+        printf "  ${C_BLUE}[ 话题群 ]${C_RESET}  %b\n" "${_hub:-${C_YELLOW}未设置${C_RESET}}"
+        printf "    ├ Realm 监控 %b  话题 %b\n" "$_relay_st" "${_th_mon:-${C_YELLOW}未设置${C_RESET}}"
+        printf "    ├ 流量配额   %b  话题 %b\n" "$_quota_st" "${_th_qt:-${C_YELLOW}未设置${C_RESET}}"
+        printf "    └ DDNS          话题 %b\n" "${_th_dd:-${C_YELLOW}未设置${C_RESET}}"
 
         printf "\n  ${C_GREEN}1.${C_RESET} 设置 Token & Chat ID\n"
         printf "  ${C_GREEN}2.${C_RESET} SSH 监控\n"
