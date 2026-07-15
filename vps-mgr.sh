@@ -2518,14 +2518,14 @@ do_quick_init() {
     echo -e "\n${L_BLUE}── [1/5] IPv6 配置 ──────────────────────────────────────${NC}"
     if [ -f "/etc/sysctl.d/99-disable-ipv6.conf" ]; then
         echo -e "  ${GREEN}✓${NC} IPv6: ${RED}已禁用（跳过）${NC}"
+        # 早已禁用 IPv6 的机器不会走 _write_disable_ipv6_conf，此处补做 interfaces 校正
+        # （本次修复之前禁用的机器都缺这一步，其 networking.service 每次开机都失败）
+        if _ipv6_ifaces_off; then
+            echo -e "  ${GREEN}✓${NC} 已注释 /etc/network/interfaces 的 IPv6 配置（否则 ifup 失败）"
+        fi
     else
-        _write_disable_ipv6_conf
-        echo -e "  ${GREEN}✓${NC} IPv6: ${RED}已禁用${NC}"
-    fi
-    # 以下两项放在 if 外：上面只在「首次禁用」时执行，而早已禁用 IPv6 的机器同样需要
-    # 校正 —— 它们都幂等，重复执行无害。
-    if _ipv6_ifaces_off; then
-        echo -e "  ${GREEN}✓${NC} 已注释 /etc/network/interfaces 的 IPv6 配置（否则 ifup 失败）"
+        _write_disable_ipv6_conf    # 内部已含 _ipv6_ifaces_off
+        echo -e "  ${GREEN}✓${NC} IPv6: ${RED}已禁用${NC}（含 interfaces IPv6 配置）"
     fi
     _purge_exim4
 
