@@ -948,6 +948,20 @@ _ipv6_ifaces_on() {
     sed -i 's/^#V6OFF# //' /etc/network/interfaces
 }
 
+# Debian 装机自带 exim4，默认要绑 IPv6 回环 ::1 —— IPv6 一禁它就必然启动失败，
+# 从此常驻 systemctl --failed，把真正的故障淹掉。代理机不需要 MTA，直接卸掉，
+# 顺带少一个监听 25 端口的攻击面。反向依赖只有它自己的组件和 bsd-mailx（mail 命令）。
+_purge_exim4() {
+    dpkg -l 2>/dev/null | grep -qE '^ii\s+exim4' || return 0
+    echo -e "  ${CYAN}⟳${NC} 检测到 exim4（Debian 自带邮件服务）"
+    echo -e "    IPv6 已禁用，它绑不上 ::1 必然启动失败；代理机也用不到 MTA，正在卸载..."
+    systemctl stop exim4 2>/dev/null || true
+    DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq \
+        exim4 exim4-base exim4-config exim4-daemon-light bsd-mailx >/dev/null 2>&1 || true
+    systemctl reset-failed exim4.service 2>/dev/null || true
+    echo -e "  ${GREEN}✓${NC} exim4 已卸载"
+}
+
 _write_disable_ipv6_conf() {
     _ipv6_ifaces_off
     cat > /etc/sysctl.d/99-disable-ipv6.conf <<'IPVCEOF'
@@ -2501,6 +2515,8 @@ do_quick_init() {
         _write_disable_ipv6_conf
         echo -e "  ${GREEN}✓${NC} IPv6: ${RED}已禁用${NC}"
     fi
+    # 放在 if 外：IPv6 已禁用时上面会跳过，但 exim4 仍可能存在（如新装机重跑初始化）
+    _purge_exim4
 
     # ── [2/5] 系统更新 & 依赖安装 ───────────────────────────
     echo -e "\n${L_BLUE}── [2/5] 系统更新 & 依赖安装 ──────────────────────────${NC}"
