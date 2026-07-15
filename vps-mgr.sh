@@ -4566,8 +4566,22 @@ check_realm_dead_forwards() {
     done
 
     msg_success "已删除 ${#dead_indices[@]} 条失效规则。"
-    msg_info "配置已更新，请手动重启 Realm 服务以生效。"
+    msg_warn "配置已更新，需重启 Realm 才生效 —— 主菜单 [11] 重启 Realm（会断开现有连接，可挑时机）"
 
+}
+
+# 配置文件是否比 realm 进程更新 —— 即改了规则却还没重启，转发仍按旧配置跑。
+# 比对 mtime 与服务启动时间，不落状态文件：重启后自动不再成立，无残留可言。
+# realm 不支持热重载（2.9.4 无 reload，上游亦无此机制），只能靠提醒兜住"改完忘重启"。
+_realm_config_stale() {
+    [[ -f "$REALM_CONFIG_FILE" ]] || return 1
+    systemctl is-active --quiet realm 2>/dev/null || return 1
+    local _cfg _svc _ts
+    _cfg=$(stat -c %Y "$REALM_CONFIG_FILE" 2>/dev/null) || return 1
+    _ts=$(systemctl show realm -p ActiveEnterTimestamp --value 2>/dev/null)
+    [[ -n "$_ts" ]] || return 1
+    _svc=$(date -d "$_ts" +%s 2>/dev/null) || return 1
+    [[ -n "$_svc" && "$_cfg" -gt "$_svc" ]]
 }
 
 _realm_safe_restart() {
@@ -4816,7 +4830,7 @@ add_realm_forward_advanced() {
         if [[ "$_restart_mode" == "auto" ]]; then
             _realm_safe_restart
         else
-            msg_info "配置已更新，请手动重启 Realm 服务以生效。"
+            msg_warn "配置已更新，需重启 Realm 才生效 —— 主菜单 [11] 重启 Realm（会断开现有连接，可挑时机）"
         fi
     fi
 }
@@ -4897,7 +4911,7 @@ add_realm_forward() {
     if [[ "$_restart_mode" == "auto" ]]; then
         _realm_safe_restart
     else
-        msg_info "配置已更新，请手动重启 Realm 服务以生效。"
+        msg_warn "配置已更新，需重启 Realm 才生效 —— 主菜单 [11] 重启 Realm（会断开现有连接，可挑时机）"
     fi
 }
 
@@ -4955,7 +4969,7 @@ delete_realm_forward() {
     close_firewall_port "$deleted_port"
     
     msg_success "规则已删除。"
-    msg_info "配置已更新，请手动重启 Realm 服务以生效。"
+    msg_warn "配置已更新，需重启 Realm 才生效 —— 主菜单 [11] 重启 Realm（会断开现有连接，可挑时机）"
 }
 
 
@@ -8676,7 +8690,9 @@ show_menu() {
         printf "   sing-box 代理     : [-]\n"
     fi
     if [[ -f "$REALM_BIN" ]]; then
-        printf "   Realm Forwarding : %b  [%b]\n" "$realm_status" "$realm_ver_str"
+        printf "   Realm Forwarding : %b  [%b]" "$realm_status" "$realm_ver_str"
+        _realm_config_stale && printf "  ${C_RED}⚠ 配置已改，未重启生效${C_RESET}"
+        printf "\n"
     else
         printf "   Realm Forwarding : [-]\n"
     fi
