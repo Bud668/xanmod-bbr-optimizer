@@ -12,13 +12,24 @@ All configuration is entered interactively at runtime. No credentials are stored
 
 ## Usage
 
+Run as root on a fresh server. This installs `curl` first, so it works on a
+minimal image where no downloader is present:
+
 ```bash
-wget -O vps-mgr.sh https://raw.githubusercontent.com/springvip/vps-mgr/main/vps-mgr.sh
-chmod +x vps-mgr.sh
-sudo ./vps-mgr.sh
+apt-get update -qq && apt-get install -y -qq curl && curl -fsSL https://raw.githubusercontent.com/springvip/vps-mgr/main/vps-mgr.sh -o vps-mgr.sh && chmod +x vps-mgr.sh && ./vps-mgr.sh
 ```
 
-The script is menu-driven — run it and pick an option.
+If `curl` is already available:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/springvip/vps-mgr/main/vps-mgr.sh -o vps-mgr.sh
+chmod +x vps-mgr.sh
+./vps-mgr.sh
+```
+
+The script is menu-driven — run it and pick an option. On a new server, start
+with `[1] Quick Init`, which installs the remaining dependencies
+(`wget`, `jq`, `socat`, `iptables-persistent`, `fail2ban`, `ipset`, and others).
 
 ## Features
 
