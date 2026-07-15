@@ -954,7 +954,12 @@ _ipv6_ifaces_on() {
 # 从此常驻 systemctl --failed，把真正的故障淹掉。代理机不需要 MTA，直接卸掉，
 # 顺带少一个监听 25 端口的攻击面。反向依赖只有它自己的组件和 bsd-mailx（mail 命令）。
 _purge_exim4() {
-    dpkg -l 2>/dev/null | grep -qE '^ii\s+exim4' || return 0
+    # 必须用 grep -c 而非 grep -q：-q 一匹配到就退出并关闭管道，dpkg -l 还剩几百行没写完
+    # 便吃到 SIGPIPE 退出 141；本脚本开了 pipefail，整条管道遂返回 141，
+    # '|| return 0' 就把「已安装」误判成「未安装」直接返回。-c 会读完全部输入，不留竞态。
+    local _n
+    _n=$(dpkg -l 2>/dev/null | grep -cE '^ii[[:space:]]+exim4' || true)
+    [[ "${_n:-0}" -gt 0 ]] || return 0
     echo -e "  ${CYAN}⟳${NC} 检测到 exim4（Debian 自带邮件服务）"
     echo -e "    IPv6 已禁用，它绑不上 ::1 必然启动失败；代理机也用不到 MTA，正在卸载..."
     systemctl stop exim4 2>/dev/null || true
