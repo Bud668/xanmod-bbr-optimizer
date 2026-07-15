@@ -5363,9 +5363,9 @@ self_update() {
     fi
 
     printf "${C_YELLOW}发现新版本: v%s → v%s${C_RESET}\n" "$SCRIPT_VERSION" "$latest"
-    printf "${C_PURPLE}是否更新? [y/N]: ${C_RESET}"
+    printf "${C_PURPLE}是否更新? [Y/n]: ${C_RESET}"
     local _yn; read -r _yn
-    [[ "${_yn,,}" == "y" ]] || return 0
+    [[ "${_yn:-Y}" =~ ^[Nn]$ ]] && return 0
 
     # 与脚本同目录建临时文件，确保后续 mv 是同文件系统内的原子替换
     tmp_file=$(mktemp "${self_path}.XXXXXX") || { msg_error "无法创建临时文件"; return 1; }
