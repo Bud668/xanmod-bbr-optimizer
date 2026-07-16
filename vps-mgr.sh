@@ -46,6 +46,10 @@ readonly SNELL_USER="snellproxy"
 readonly SNELL_BIN="/usr/local/bin/snell-server"
 readonly SNELL_CONFIG_DIR="/etc/snell"
 readonly SNELL_SERVICE_FILE="/etc/systemd/system/snell@.service"
+# Snell 无 --version，安装时把版本号落盘记录，供更新检查比对
+readonly SNELL_VERSION_FILE="/etc/snell/.version"
+# Snell 无 GitHub 仓库，版本从 Surge 官方 KB 页面抓取
+readonly SNELL_KB_URL="https://kb.nssurge.com/surge-knowledge-base/release-notes/snell"
 
 # Realm 相关
 readonly REALM_USER="realmproxy"
@@ -3853,9 +3857,10 @@ get_installed_version() {
     local ver=""
     case "$service_name" in
         snell)
-            # Snell 无 --version，直接使用脚本内置版本号（与下载地址一致）
+            # Snell 无 --version，读安装时落盘的版本号；缺失（旧脚本装的）则回退内置版本
             if [[ -f "$SNELL_BIN" ]]; then
-                ver="${SNELL_VERSION_OVERRIDE}"
+                ver=$(cat "$SNELL_VERSION_FILE" 2>/dev/null || true)
+                [[ "$ver" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]] || ver="${SNELL_VERSION_OVERRIDE}"
             fi
             ;;
         realm)
@@ -3913,6 +3918,21 @@ check_service_status() {
 # 版本检查与更新
 # ------------------------------------------------------------------------------
 
+# 从 Surge KB 抓取 Snell 最新【稳定版】(排除 beta)。
+# 锚定到 snell-server-vX.Y.Z-linux 下载链接取版本——页面上还混着 Surge 客户端等无关
+# 版本号，直接 grep 全页会误取（如 v7.2.0）。'-linux' 紧跟补丁号，天然排除 bN 结尾的
+# beta。任何一步失败都回退内置 SNELL_VERSION_OVERRIDE，保证抓取源挂了也不影响装/升级。
+_snell_latest_stable() {
+    local _html _ver
+    _html=$(curl -fsSL --max-time 12 "$SNELL_KB_URL" 2>/dev/null) \
+        || { echo "$SNELL_VERSION_OVERRIDE"; return; }
+    _ver=$(printf '%s' "$_html" \
+        | grep -oE 'snell-server-v[0-9]+\.[0-9]+\.[0-9]+-linux' \
+        | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' \
+        | sort -V | tail -1)
+    [[ "$_ver" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] && echo "$_ver" || echo "$SNELL_VERSION_OVERRIDE"
+}
+
 # 后台空闲检查新版本 (每24小时一次)，结果写入缓存
 check_updates_background() {
     # 如果缓存文件存在且未超期，跳过
@@ -3926,11 +3946,11 @@ check_updates_background() {
         results=""
         NL=$'\n'
 
-        # 检查 Snell (固定下载源，无 GitHub API；仅当已安装版本与脚本固化版本不一致时提示)
+        # 检查 Snell (从 Surge KB 抓稳定版，无 GitHub API)
         snell_installed=""
         [[ -f "$SNELL_BIN" ]] && snell_installed=$(get_installed_version snell "$SNELL_BIN")
         if [[ -n "$snell_installed" && -f "$SNELL_BIN" ]]; then
-            snell_latest="${SNELL_VERSION_OVERRIDE}"
+            snell_latest=$(_snell_latest_stable)
             if [[ "$snell_installed" != "$snell_latest" && "$snell_installed" != "未知" ]]; then
                 results+="snell:${snell_latest}${NL}"
             fi
@@ -3974,12 +3994,14 @@ update_service() {
     case "$service_name" in
         snell)
             if [[ ! -f "$SNELL_BIN" ]]; then msg_error "Snell 未安装。"; return; fi
-            local installed
+            local installed _latest
             installed=$(get_installed_version snell "$SNELL_BIN")
+            msg_step "正在从 Surge KB 查询最新稳定版..."
+            _latest=$(_snell_latest_stable)
             printf "  当前已安装: ${C_YELLOW}%s${C_RESET}\n" "$installed"
-            printf "  脚本内置版本: ${C_GREEN}%s${C_RESET}\n" "${SNELL_VERSION_OVERRIDE}"
-            printf "\n${C_CYAN}请输入目标版本号或完整下载链接 (直接回车使用内置版本 %s):${C_RESET}\n" "${SNELL_VERSION_OVERRIDE}"
-            printf "  格式1 - 版本号: ${C_WHITE}v5.0.2${C_RESET}\n"
+            printf "  最新稳定版: ${C_GREEN}%s${C_RESET}\n" "$_latest"
+            printf "\n${C_CYAN}请输入目标版本号或完整下载链接 (直接回车使用最新稳定版 %s):${C_RESET}\n" "$_latest"
+            printf "  格式1 - 版本号: ${C_WHITE}v5.0.2${C_RESET}  (装 beta 如 v6.0.0b4 也可)\n"
             printf "  格式2 - 完整URL: ${C_WHITE}https://dl.nssurge.com/snell/snell-server-vX.X.X-linux-amd64.zip${C_RESET}\n"
             printf "${C_PURPLE}>>> ${C_RESET}"
             read -r snell_input
@@ -3987,12 +4009,12 @@ update_service() {
 
             local target_version snell_download_url
             if [[ -z "$snell_input" ]]; then
-                target_version="${SNELL_VERSION_OVERRIDE}"
+                target_version="$_latest"
                 snell_download_url="https://dl.nssurge.com/snell/snell-server-${target_version}-linux-${SNELL_ARCH}.zip"
             elif [[ "$snell_input" =~ ^https:// ]]; then
                 snell_download_url="$snell_input"
                 target_version=$(echo "$snell_input" | grep -oP 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "(自定义)")
-            elif [[ "$snell_input" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            elif [[ "$snell_input" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(b[0-9]+)?$ ]]; then
                 [[ "$snell_input" != v* ]] && snell_input="v${snell_input}"
                 target_version="$snell_input"
                 snell_download_url="https://dl.nssurge.com/snell/snell-server-${target_version}-linux-${SNELL_ARCH}.zip"
@@ -4124,6 +4146,13 @@ install_service() {
     mv -f "$bin_in_archive" "$bin_path"
     chmod +x "$bin_path"
     rm -rf "$tmp_dir"
+
+    # Snell 无 --version，从下载 URL 提取版本号落盘（含 beta，供后续比对）
+    if [[ "$service_name" == "snell" ]]; then
+        local _v; _v=$(printf '%s' "$download_url" | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+(b[0-9]+)?' | head -1 || true)
+        [[ -n "$_v" ]] && printf '%s\n' "$_v" > "$SNELL_VERSION_FILE"
+    fi
+
     msg_info "${service_name} 核心程序已安装。"
 }
 
