@@ -1,7 +1,7 @@
 #!/bin/bash
 # ==============================================================================
 # Server & VPS Manager (统一版)
-# https://github.com/Bud668/xanmod-bbr-optimizer
+# https://github.com/Bud668/vps-mgr
 # ==============================================================================
 
 set -euo pipefail
@@ -16,8 +16,8 @@ readonly SNELL_VERSION_OVERRIDE="v5.0.1"
 # SECTION 1: 全局常量
 # ==============================================================================
 
-readonly SCRIPT_VERSION="1.2.4"
-readonly SELF_REPO="Bud668/xanmod-bbr-optimizer"
+readonly SCRIPT_VERSION="1.2.5"
+readonly SELF_REPO="Bud668/vps-mgr"
 readonly TZ_DEFAULT="Asia/Shanghai"
 readonly WORK_DIR="/opt/proxy-manager"
 readonly CACHE_FILE="$WORK_DIR/server_info.cache"
@@ -196,7 +196,8 @@ get_latest_github_release() {
     local latest_tag
 
     # 尝试获取，如果失败则静默
-    latest_tag=$(curl -s --max-time 10 --retry 2 "https://api.github.com/repos/${repo_url}/releases/latest" | jq -r '.tag_name' 2>/dev/null)
+    # -L 跟随重定向：仓库改名后 API 返回 301，不跟随就拿不到版本（自更新会失效）
+    latest_tag=$(curl -sL --max-time 10 --retry 2 "https://api.github.com/repos/${repo_url}/releases/latest" | jq -r '.tag_name' 2>/dev/null)
 
     if [[ -z "$latest_tag" || "$latest_tag" == "null" ]]; then
         if [[ -n "$fallback_version" ]]; then
