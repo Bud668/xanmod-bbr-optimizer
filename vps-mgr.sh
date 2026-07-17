@@ -16,7 +16,7 @@ readonly SNELL_VERSION_OVERRIDE="v5.0.1"
 # SECTION 1: 全局常量
 # ==============================================================================
 
-readonly SCRIPT_VERSION="1.2.5"
+readonly SCRIPT_VERSION="1.2.6"
 readonly SELF_REPO="Bud668/vps-mgr"
 readonly TZ_DEFAULT="Asia/Shanghai"
 readonly WORK_DIR="/opt/proxy-manager"
@@ -5562,18 +5562,21 @@ load_config() {
 
 # 从缓存推导本机节点标识，格式: HK_197
 get_node_id() {
+    # 默认给 TG 通知用：纯 ASCII 名前置国旗 + # 标签（🇺🇸 #Tag），与 SSH 推送格式一致。
+    # 传 "plain" 则不加 # —— 终端显示用（# 是 Telegram 话题标签，终端里没意义）。
+    local _plain="${1:-}" _hash="#"
+    [[ "$_plain" == "plain" ]] && _hash=""
     # 优先使用 SSH 监控配置的服务器别名
     local _ssh_name
     _ssh_name=$(grep "^SERVER_NAME=" /etc/ssh-tg-monitor.conf 2>/dev/null | cut -d= -f2- | sed 's/^"//;s/"$//' || true)
     if [[ -n "$_ssh_name" ]]; then
-        # 纯字母数字下划线标签 → 前置国旗，使消息格式 🇺🇸 #Tag
         if [[ "$_ssh_name" =~ ^[a-zA-Z0-9_-]+$ ]]; then
             local _cc _flag=""
             _cc=$(grep -E '^SERVER_COUNTRY_CODE=' "$CACHE_FILE" 2>/dev/null | head -1 | cut -d= -f2- | sed "s/^['\"]//;s/['\"]$//" || true)
             if [[ ${#_cc} -eq 2 && "$_cc" =~ ^[A-Za-z]+$ ]]; then
                 _flag=$(python3 -c "cc='${_cc^^}'; print(chr(0x1F1E6+ord(cc[0])-65)+chr(0x1F1E6+ord(cc[1])-65),end='')" 2>/dev/null || true)
             fi
-            echo "${_flag:+${_flag} }${_ssh_name}"
+            echo "${_flag:+${_flag} }${_hash}${_ssh_name}"
         else
             echo "$_ssh_name"
         fi
@@ -5590,7 +5593,7 @@ get_node_id() {
     fi
     local last="${ip##*.}"
     cc="${cc:-UN}"
-    [[ -n "$last" ]] && echo "${cc}_${last}" || echo "$cc"
+    [[ -n "$last" ]] && echo "${_hash}${cc}_${last}" || echo "${_hash}${cc}"
 }
 
 # 规范化链式别名的分隔符显示（" → " 统一间距）；保持各段原样透传
@@ -5914,7 +5917,7 @@ run_daemon() {
                                 echo "$_now_ts" > "$_cooldown_file"
                                 local _now_str
                                 _now_str=$(TZ="$TZ_DEFAULT" date '+%m-%d %H:%M')
-                                send_telegram "🔴 #节点不可达   ${_node_id//[a-zA-Z0-9_]/}#${_node_id//[^a-zA-Z0-9_]/}
+                                send_telegram "🔴 #节点不可达   ${_node_id}
 🕐 ${_now_str}
 ━━━━━━━━━━━━━━━━━
 节点: ${alias}
@@ -5927,7 +5930,7 @@ run_daemon() {
                             rm -f "$_cooldown_file"
                             local _now_str
                             _now_str=$(TZ="$TZ_DEFAULT" date '+%m-%d %H:%M')
-                            send_telegram "🟢 #节点已恢复   ${_node_id//[a-zA-Z0-9_]/}#${_node_id//[^a-zA-Z0-9_]/}
+                            send_telegram "🟢 #节点已恢复   ${_node_id}
 🕐 ${_now_str}
 ━━━━━━━━━━━━━━━━━
 节点: ${alias}
@@ -6162,7 +6165,7 @@ send_daily_report() {
               || TZ="$TZ_DEFAULT" date -r "$since" '+%m-%d %H:%M' 2>/dev/null || echo "N/A")
 
     local msg_ranking
-    msg_ranking="📊 Realm 24h 稳定性排名 ${node_id//[a-zA-Z0-9_]/}#${node_id//[^a-zA-Z0-9_]/}
+    msg_ranking="📊 Realm 24h 稳定性排名 ${node_id}
 🕐 <b>${time_start} → ${time_end}</b>${ranking}
 ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
 汇总: 共 ${total_rules} 条 ｜ 🟢 ${ok_rules} ｜ 🟡 ${warn_rules} ｜ 🔴 $(( crit_rules + dead_rules ))
@@ -6563,7 +6566,7 @@ quota_check_all() {
         if [[ "$paused" == "1" && "$pause_reason" == "quota" ]]; then
             if [[ "${quota_bytes:-0}" -eq 0 || "$total" -lt "${quota_bytes}" ]]; then
                 quota_resume_port "$port"
-                _quota_tg_notify "🟢 流量已重置 ${node_id//[a-zA-Z0-9_]/}#${node_id//[^a-zA-Z0-9_]/}
+                _quota_tg_notify "🟢 流量已重置 ${node_id}
 #${alias} 端口 ${port} 新月份流量已重置，自动恢复运行。"
                 paused=0; pause_reason="-"
             fi
@@ -6585,7 +6588,7 @@ quota_check_all() {
         # ── 到期检查 ─────────────────────────────────────────────────────
         if [[ "$expiry" != "-" && -n "$expiry" && "$cur_date" > "$expiry" ]]; then
             quota_pause_port "$port" "expiry"
-            _quota_tg_notify "⏰ 端口已到期 ${node_id//[a-zA-Z0-9_]/}#${node_id//[^a-zA-Z0-9_]/}
+            _quota_tg_notify "⏰ 端口已到期 ${node_id}
 #${alias} 端口 ${port} 已于 ${expiry} 到期，已自动暂停。"
             continue
         fi
@@ -6595,7 +6598,7 @@ quota_check_all() {
             tomorrow=$(TZ="$TZ_DEFAULT" date -d "tomorrow" +%Y-%m-%d 2>/dev/null || TZ="$TZ_DEFAULT" date -v+1d +%Y-%m-%d 2>/dev/null || true)
             local _exp_warn_flag="${QUOTA_DIR}/.expwarn_${port}_${expiry}"
             if [[ "$expiry" == "$tomorrow" && ! -f "$_exp_warn_flag" ]]; then
-                _quota_tg_notify "🟡 到期预警 ${node_id//[a-zA-Z0-9_]/}#${node_id//[^a-zA-Z0-9_]/}
+                _quota_tg_notify "🟡 到期预警 ${node_id}
 #${alias} 端口 ${port} 明天 (${expiry}) 到期，请及时处理。"
                 touch "$_exp_warn_flag"
             fi
@@ -6607,7 +6610,7 @@ quota_check_all() {
             local used_h limit_h
             used_h=$(_qbytes_human "$total")
             limit_h=$(_qbytes_human "$quota_bytes")
-            _quota_tg_notify "🚫 流量超限 ${node_id//[a-zA-Z0-9_]/}#${node_id//[^a-zA-Z0-9_]/}
+            _quota_tg_notify "🚫 流量超限 ${node_id}
 #${alias} 端口 ${port} 流量已达 ${used_h}/${limit_h}，已自动暂停。"
             continue
         fi
@@ -6622,7 +6625,7 @@ quota_check_all() {
                 pct=$(( total * 100 / quota_bytes ))
                 used_h=$(_qbytes_human "$total")
                 limit_h=$(_qbytes_human "$quota_bytes")
-                _quota_tg_notify "⚠️ 流量预警 ${node_id//[a-zA-Z0-9_]/}#${node_id//[^a-zA-Z0-9_]/}
+                _quota_tg_notify "⚠️ 流量预警 ${node_id}
 #${alias} 端口 ${port} 流量已用 ${pct}%（${used_h}/${limit_h}），请注意。"
                 touch "$warn_flag"
             fi
@@ -6653,7 +6656,7 @@ quota_daily_report() {
     cur_date=$(TZ="$TZ_DEFAULT" date +%Y-%m-%d)
     node_id=$(get_node_id)
 
-    local msg="📊 配额日报 ${cur_date} ${node_id//[a-zA-Z0-9_]/}#${node_id//[^a-zA-Z0-9_]/}"$'\n'"━━━━━━━━━━━━━━━━━━"$'\n'
+    local msg="📊 配额日报 ${cur_date} ${node_id}"$'\n'"━━━━━━━━━━━━━━━━━━"$'\n'
     local has_port=0
 
     while IFS='|' read -r port alias quota_bytes expiry _bw; do
@@ -6985,7 +6988,7 @@ _quota_auto_delete() {
     mv "$t2" "$QUOTA_DATA"
     rm -f "${QUOTA_DIR}/.warned_${port}_"* "${QUOTA_DIR}/.expwarn_${port}_"*
 
-    _quota_tg_notify "🗑️ 端口已删除 ${node_id//[a-zA-Z0-9_]/}#${node_id//[^a-zA-Z0-9_]/}
+    _quota_tg_notify "🗑️ 端口已删除 ${node_id}
 #${alias} 端口 ${port} 到期超过 7 天未续期，已自动删除。"
     log_message "INFO" "端口 ${port}【${alias}】到期 7 天自动删除"
 }
@@ -8502,7 +8505,7 @@ ddns_show_menu() {
     printf "${C_PURPLE}==============================================${C_RESET}\n"
     printf "${C_CYAN}         Cloudflare DDNS 管理面板${C_RESET}\n"
     printf "${C_PURPLE}==============================================${C_RESET}\n"
-    printf "  机器名称 : %s\n" "$(get_node_id)"
+    printf "  机器名称 : %s\n" "$(get_node_id plain)"
     printf "  DNS 记录 : %s (A/IPv4)\n" "${DDNS_RECORD_NAME:-未配置}"
     printf "  服务状态 : %b\n" "$(ddns_service_status)"
     printf "  日志行数 : %s / %s\n" "$_logn" "$DDNS_LOG_MAX_LINES"
