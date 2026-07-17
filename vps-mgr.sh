@@ -16,7 +16,7 @@ readonly SNELL_VERSION_OVERRIDE="v5.0.1"
 # SECTION 1: 全局常量
 # ==============================================================================
 
-readonly SCRIPT_VERSION="1.2.6"
+readonly SCRIPT_VERSION="1.2.7"
 readonly SELF_REPO="Bud668/vps-mgr"
 readonly TZ_DEFAULT="Asia/Shanghai"
 readonly WORK_DIR="/opt/proxy-manager"
@@ -163,16 +163,16 @@ acquire_lock() {
 }
 
 get_flag_emoji() {
-    local country_code=$1
-    case "$country_code" in
-        "US") printf "🇺🇸" ;; "CN") printf "🇨🇳" ;; "JP") printf "🇯🇵" ;;
-        "KR") printf "🇰🇷" ;; "SG") printf "🇸🇬" ;; "HK") printf "🇭🇰" ;;
-        "TW") printf "🇹🇼" ;; "GB") printf "🇬🇧" ;; "DE") printf "🇩🇪" ;;
-        "FR") printf "🇫🇷" ;; "CA") printf "🇨🇦" ;; "AU") printf "🇦🇺" ;;
-        "RU") printf "🇷🇺" ;; "IN") printf "🇮🇳" ;; "BR") printf "🇧🇷" ;;
-        "NL") printf "🇳🇱" ;; "IT") printf "🇮🇹" ;; "ES") printf "🇪🇸" ;;
-        *) printf "🌐" ;;
-    esac
+    # 由国家码算 Unicode 国旗（区域指示符），支持任意国家，不再靠写死列表。
+    # UN = 脚本内部"未知"哨兵、空值、非两位字母 → 一律地球。纯 bash，无需 python。
+    local cc="${1:-}"
+    [[ "$cc" =~ ^[A-Za-z]{2}$ ]] || { printf '🌐'; return; }
+    cc="${cc^^}"
+    [[ "$cc" == "UN" ]] && { printf '🌐'; return; }
+    local a b
+    a=$(( 0x1F1E6 + $(printf '%d' "'${cc:0:1}") - 65 ))
+    b=$(( 0x1F1E6 + $(printf '%d' "'${cc:1:1}") - 65 ))
+    printf "\\U$(printf '%08x' "$a")\\U$(printf '%08x' "$b")"
 }
 
 # 渲染服务器展示名。纯 ASCII 名（如 Bread_LA）补国旗；已含 emoji 的（如自动生成的
