@@ -16,7 +16,7 @@ readonly SNELL_VERSION_OVERRIDE="v5.0.1"
 # SECTION 1: 全局常量
 # ==============================================================================
 
-readonly SCRIPT_VERSION="1.2.7"
+readonly SCRIPT_VERSION="1.3.0"
 readonly SELF_REPO="Bud668/vps-mgr"
 readonly TZ_DEFAULT="Asia/Shanghai"
 readonly WORK_DIR="/opt/proxy-manager"
@@ -29,7 +29,6 @@ readonly UPDATE_CHECK_INTERVAL=86400
 # = 10000 54999）刻意错开，避免监听口与内核出站源端口在同一台机上撞号（bind 竞态）。
 readonly RAND_PORT_MIN=55000
 readonly RAND_PORT_MAX=65535
-readonly DATA_MAX_LINES=500000
 readonly ULIMIT_NOFILE=51200
 
 # 变量初始化
@@ -372,7 +371,6 @@ _tg_resolve_channel() {
     local _key
     TG_BOT_TOKEN=""; TG_CHAT_ID=""; TG_THREAD_ID=""
     case "$1" in
-        monitor) _key=TG_THREAD_MONITOR ;;
         quota)   _key=TG_THREAD_QUOTA   ;;
         ddns)    _key=TG_THREAD_DDNS    ;;
         *)       return 0 ;;
@@ -386,16 +384,15 @@ _tg_resolve_channel() {
 # 写入统一 TG 配置：SSH 独立群 + 话题群及三个话题ID
 _write_tg_conf() {
     local _tok="$1" _chat="$2" _srv="$3"
-    local _hub="${4:-}" _th_mon="${5:-}" _th_qt="${6:-}" _th_dd="${7:-}"
+    local _hub="${4:-}" _th_qt="${5:-}" _th_dd="${6:-}"
     local _tmp; _tmp=$(mktemp)
     {
         printf "TG_BOT_TOKEN='%s'\n" "$_tok"
         printf "TG_CHAT_ID='%s'\n"   "$_chat"
-        [[ -n "$_srv"    ]] && printf 'SERVER_NAME="%s"\n'       "$_srv"
-        [[ -n "$_hub"    ]] && printf "TG_CHAT_HUB='%s'\n"       "$_hub"
-        [[ -n "$_th_mon" ]] && printf "TG_THREAD_MONITOR='%s'\n" "$_th_mon"
-        [[ -n "$_th_qt"  ]] && printf "TG_THREAD_QUOTA='%s'\n"   "$_th_qt"
-        [[ -n "$_th_dd"  ]] && printf "TG_THREAD_DDNS='%s'\n"    "$_th_dd"
+        [[ -n "$_srv"   ]] && printf 'SERVER_NAME="%s"\n'     "$_srv"
+        [[ -n "$_hub"   ]] && printf "TG_CHAT_HUB='%s'\n"     "$_hub"
+        [[ -n "$_th_qt" ]] && printf "TG_THREAD_QUOTA='%s'\n" "$_th_qt"
+        [[ -n "$_th_dd" ]] && printf "TG_THREAD_DDNS='%s'\n"  "$_th_dd"
     } > "$_tmp"
     chmod 600 "$_tmp"
     mv "$_tmp" "$TG_CONF"
@@ -405,17 +402,17 @@ _write_tg_conf() {
 # $1 = SERVER_NAME（可为空）
 _tg_input_tokens() {
     local _srv="${1:-}"
-    local _vals _vline _blank _new_tok _new_chat _hub _th_mon _th_qt _th_dd
+    local _vals _vline _blank _new_tok _new_chat _hub _th_qt _th_dd
     local _resp _bot _gf _cf
     while :; do
         printf "  粘贴配置，支持 # 注释行和空行分隔，自动跳过:\n"
         printf "  顺序: Bot Token → SSH 群 Chat ID → 话题群 Chat ID\n"
-        printf "        → Realm 话题ID → 配额 话题ID → DDNS 话题ID\n"
+        printf "        → 配额 话题ID → DDNS 话题ID\n"
         printf "  ${C_CYAN}提示: 话题ID = 在 TG 里右键话题「复制链接」，末尾那个数字${C_RESET}\n"
         printf "  ${C_CYAN}      所有机器填同一组 ID 即可共用话题群${C_RESET}\n"
         printf "  ${C_YELLOW}填完后（最少填 Token 和 SSH Chat ID 两行）连按两次回车结束；输入 q 放弃${C_RESET}\n>>> "
         _vals=(); _blank=0
-        while [[ ${#_vals[@]} -lt 6 ]]; do
+        while [[ ${#_vals[@]} -lt 5 ]]; do
             read -r _vline < /dev/tty || break
             _vline="${_vline#"${_vline%%[![:space:]]*}"}"
             _vline="${_vline%"${_vline##*[![:space:]]}"}"
@@ -432,7 +429,7 @@ _tg_input_tokens() {
             _vals+=("$_vline")
         done
         _new_tok="${_vals[0]:-}" _new_chat="${_vals[1]:-}" _hub="${_vals[2]:-}"
-        _th_mon="${_vals[3]:-}" _th_qt="${_vals[4]:-}" _th_dd="${_vals[5]:-}"
+        _th_qt="${_vals[3]:-}" _th_dd="${_vals[4]:-}"
         [[ "$_new_tok" == "q" || "$_new_tok" == "Q" ]] && { printf "  ${C_YELLOW}⚠ 已放弃配置${C_RESET}\n"; return 1; }
         if [[ -z "$_new_tok" || -z "$_new_chat" ]]; then
             printf "  ${C_RED}✗ Token 或 SSH Chat ID 不能为空，请重新粘贴（q 放弃）${C_RESET}\n"; continue
@@ -453,11 +450,10 @@ _tg_input_tokens() {
         printf "  SSH 群  : %s ${C_DIM}(独立群，不用话题)${C_RESET}\n" "$_new_chat"
         if [[ -n "$_hub" ]]; then
             printf "  话题群  : %s\n" "$_hub"
-            printf "    ├ Realm 监控 : 话题 %s\n" "${_th_mon:-未设置}"
-            printf "    ├ 流量配额   : 话题 %s\n" "${_th_qt:-未设置}"
-            printf "    └ DDNS       : 话题 %s\n" "${_th_dd:-未设置}"
+            printf "    ├ 流量配额 : 话题 %s\n" "${_th_qt:-未设置}"
+            printf "    └ DDNS     : 话题 %s\n" "${_th_dd:-未设置}"
         else
-            printf "  话题群  : ${C_DIM}未设置（Realm/配额/DDNS 沿用原有独立频道配置）${C_RESET}\n"
+            printf "  话题群  : ${C_DIM}未设置（配额/DDNS 通道将不可用）${C_RESET}\n"
         fi
         printf "  ${C_YELLOW}确认写入？[y=写入 / q=放弃 / 回车=重新粘贴]: ${C_RESET}"
         read -r _cf < /dev/tty || _cf="q"
@@ -467,7 +463,7 @@ _tg_input_tokens() {
             *)    printf "  ${C_CYAN}↻ 重新粘贴${C_RESET}\n"; continue ;;
         esac
     done
-    _write_tg_conf "$_new_tok" "$_new_chat" "$_srv" "$_hub" "$_th_mon" "$_th_qt" "$_th_dd"
+    _write_tg_conf "$_new_tok" "$_new_chat" "$_srv" "$_hub" "$_th_qt" "$_th_dd"
     printf "  ${C_GREEN}✓ 已保存${C_RESET}\n"
     printf "  ${C_CYAN}正在启动各监控服务...${C_RESET}\n"
     _setup_ssh_tg_monitor || true
@@ -475,7 +471,6 @@ _tg_input_tokens() {
         # 先发确认：服务未装时也能立刻验证话题 ID 是否正确
         printf "  ${C_CYAN}正在验证话题群各通道...${C_RESET}\n"
         _tg_notify_configured "$_srv"
-        [[ -n "$_th_mon" && -f "$REALM_BIN" ]] && { setup_config || true; }
         [[ -n "$_th_qt" ]] && grep -q '^[0-9]' "$QUOTA_CONFIG" 2>/dev/null && { install_quota_services || true; }
     fi
     return 0
@@ -485,7 +480,7 @@ _tg_input_tokens() {
 _tg_notify_configured() {
     local _srv="$1" _entry _ch _label _msg _ts
     _ts=$(TZ="$TZ_DEFAULT" date '+%Y-%m-%d %H:%M:%S')
-    for _entry in "monitor:Realm 监控" "quota:流量配额" "ddns:DDNS"; do
+    for _entry in "quota:流量配额" "ddns:DDNS"; do
         _ch="${_entry%%:*}"; _label="${_entry#*:}"
         _tg_resolve_channel "$_ch"
         [[ -z "$TG_BOT_TOKEN" || -z "$TG_CHAT_ID" || -z "$TG_THREAD_ID" ]] && continue
@@ -528,20 +523,17 @@ _do_tg_config() {
         clear
         printf "${C_CYAN}:: TG 推送配置 ::${C_RESET}\n\n"
 
-        local _tok="" _chat="" _srv="" _hub="" _th_mon="" _th_qt="" _th_dd=""
-        _tok=$(_tg_cfg_get    "$TG_CONF" TG_BOT_TOKEN)
-        _chat=$(_tg_cfg_get   "$TG_CONF" TG_CHAT_ID)
-        _srv=$(_tg_cfg_get    "$TG_CONF" SERVER_NAME)
-        _hub=$(_tg_cfg_get    "$TG_CONF" TG_CHAT_HUB)
-        _th_mon=$(_tg_cfg_get "$TG_CONF" TG_THREAD_MONITOR)
-        _th_qt=$(_tg_cfg_get  "$TG_CONF" TG_THREAD_QUOTA)
-        _th_dd=$(_tg_cfg_get  "$TG_CONF" TG_THREAD_DDNS)
+        local _tok="" _chat="" _srv="" _hub="" _th_qt="" _th_dd=""
+        _tok=$(_tg_cfg_get   "$TG_CONF" TG_BOT_TOKEN)
+        _chat=$(_tg_cfg_get  "$TG_CONF" TG_CHAT_ID)
+        _srv=$(_tg_cfg_get   "$TG_CONF" SERVER_NAME)
+        _hub=$(_tg_cfg_get   "$TG_CONF" TG_CHAT_HUB)
+        _th_qt=$(_tg_cfg_get "$TG_CONF" TG_THREAD_QUOTA)
+        _th_dd=$(_tg_cfg_get "$TG_CONF" TG_THREAD_DDNS)
 
-        local _ssh_tg_st _relay_st _quota_st _ddns_st
+        local _ssh_tg_st _quota_st _ddns_st
         systemctl is-active --quiet "$SSH_TG_SERVICE" 2>/dev/null \
             && _ssh_tg_st="${C_GREEN}运行中${C_RESET}" || _ssh_tg_st="[-]"
-        systemctl is-active --quiet relay-monitor 2>/dev/null \
-            && _relay_st="${C_GREEN}运行中${C_RESET}" || _relay_st="[-]"
         systemctl is-active --quiet quota-check.timer 2>/dev/null \
             && _quota_st="${C_GREEN}运行中${C_RESET}" || _quota_st="[-]"
         systemctl is-active --quiet "${DDNS_SERVICE_NAME}.timer" 2>/dev/null \
@@ -553,17 +545,15 @@ _do_tg_config() {
         printf "    Chat   : %s\n\n" "${_chat:-未设置}"
 
         printf "  ${C_BLUE}[ 话题群 ]${C_RESET}  %b\n" "${_hub:-${C_YELLOW}未设置${C_RESET}}"
-        printf "    ├ Realm 监控 %b  话题 %b\n" "$_relay_st" "${_th_mon:-${C_YELLOW}未设置${C_RESET}}"
-        printf "    ├ 流量配额   %b  话题 %b\n" "$_quota_st" "${_th_qt:-${C_YELLOW}未设置${C_RESET}}"
-        printf "    └ DDNS       %b  话题 %b\n" "$_ddns_st" "${_th_dd:-${C_YELLOW}未设置${C_RESET}}"
+        printf "    ├ 流量配额 %b  话题 %b\n" "$_quota_st" "${_th_qt:-${C_YELLOW}未设置${C_RESET}}"
+        printf "    └ DDNS     %b  话题 %b\n" "$_ddns_st" "${_th_dd:-${C_YELLOW}未设置${C_RESET}}"
 
         printf "\n  ${C_GREEN}1.${C_RESET} 设置 Token & Chat ID\n"
         printf "  ${C_GREEN}2.${C_RESET} SSH 监控\n"
-        printf "  ${C_GREEN}3.${C_RESET} Realm 监控\n"
-        printf "  ${C_GREEN}4.${C_RESET} 配额 监控\n"
-        printf "  ${C_GREEN}5.${C_RESET} 测试推送\n"
+        printf "  ${C_GREEN}3.${C_RESET} 配额 监控\n"
+        printf "  ${C_GREEN}4.${C_RESET} 测试推送\n"
         printf "  ${C_GREEN}0.${C_RESET} 返回\n"
-        printf "\n${C_CYAN}请选择 [0-5]: ${C_RESET}"
+        printf "\n${C_CYAN}请选择 [0-4]: ${C_RESET}"
         local _tg_ch; read -r _tg_ch < /dev/tty
 
         case "$_tg_ch" in
@@ -590,7 +580,7 @@ _do_tg_config() {
                             _nt=$(echo "$_nt" | tr -d '[:space:]'); _nc=$(echo "$_nc" | tr -d '[:space:]')
                             [[ -n "$_nt" ]] && _tok="$_nt"
                             [[ -n "$_nc" ]] && _chat="$_nc"
-                            _write_tg_conf "$_tok" "$_chat" "$_srv" "$_hub" "$_th_mon" "$_th_qt" "$_th_dd"
+                            _write_tg_conf "$_tok" "$_chat" "$_srv" "$_hub" "$_th_qt" "$_th_dd"
                             printf "  ${C_CYAN}正在启动 SSH 推送服务...${C_RESET}\n"
                             _setup_ssh_tg_monitor || true
                             pause ;;
@@ -611,40 +601,7 @@ _do_tg_config() {
                         *) msg_warn "无效选项"; printf "\n${C_GREEN}按任意键返回...${C_RESET}"; read -rsn1 ;;
                     esac
                 done ;;
-            3)  # Realm 监控
-                while true; do
-                    clear
-                    printf "${C_CYAN}:: Realm 监控 ::${C_RESET}\n\n"
-                    local _rm_st
-                    [[ -n "$_hub" && -n "$_th_mon" ]] \
-                        && _rm_st="${C_GREEN}已配置${C_RESET}" || _rm_st="${C_RED}未配置${C_RESET}"
-                    printf "  状态    : %b\n" "$_rm_st"
-                    printf "  推送目标: ${C_CYAN}%s${C_RESET} 话题 ${C_CYAN}%s${C_RESET}\n" \
-                        "${_hub:-未设置}" "${_th_mon:-未设置}"
-                    printf "\n  ${C_GREEN}1.${C_RESET} 配置并启动服务\n"
-                    printf "  ${C_GREEN}2.${C_RESET} 推送稳定性排名\n"
-                    printf "  ${C_GREEN}3.${C_RESET} 查看实时统计\n"
-                    printf "  ${C_GREEN}4.${C_RESET} 查看探测日志\n"
-                    printf "  ${C_GREEN}5.${C_RESET} 卸载服务\n"
-                    printf "  ${C_GREEN}0.${C_RESET} 返回\n"
-                    printf "\n${C_CYAN}请选择 [0-5]: ${C_RESET}"
-                    local _rm_sub; read -r _rm_sub < /dev/tty; printf "\n"
-                    case $_rm_sub in
-                        1)  setup_config || true; pause ;;
-                        2)  load_config; send_daily_report || true
-                            printf "\n${C_GREEN}按任意键返回...${C_RESET}"; read -rsn1 ;;
-                        3)  show_relay_status ;;
-                        4)  journalctl -u relay-monitor.service -f -o cat &
-                            local _rmpid=$!
-                            read -n 1 -s -r -p "按任意键返回..."
-                            kill "$_rmpid" 2>/dev/null || true
-                            wait "$_rmpid" 2>/dev/null || true ;;
-                        5)  uninstall_relay_services || true; break ;;
-                        0|"") break ;;
-                        *) msg_warn "无效选项"; printf "\n${C_GREEN}按任意键返回...${C_RESET}"; read -rsn1 ;;
-                    esac
-                done ;;
-            4)  # 配额 监控
+            3)  # 配额 监控
                 while true; do
                     clear
                     printf "${C_CYAN}:: 配额 监控 ::${C_RESET}\n\n"
@@ -668,12 +625,11 @@ _do_tg_config() {
                         *) msg_warn "无效选项"; printf "\n${C_GREEN}按任意键返回...${C_RESET}"; read -rsn1 ;;
                     esac
                 done ;;
-            5)  # 测试推送（SSH 独立群 + 话题群三个话题）
+            4)  # 测试推送（SSH 独立群 + 话题群两个话题）
                 local _ts; _ts=$(TZ="$TZ_DEFAULT" date '+%H:%M:%S')
-                _tg_test_one "SSH"   "$_tok" "$_chat" ""        "$_ts"
-                _tg_test_one "Realm" "$_tok" "$_hub"  "$_th_mon" "$_ts"
-                _tg_test_one "配额"  "$_tok" "$_hub"  "$_th_qt"  "$_ts"
-                _tg_test_one "DDNS"  "$_tok" "$_hub"  "$_th_dd"  "$_ts"
+                _tg_test_one "SSH"  "$_tok" "$_chat" ""       "$_ts"
+                _tg_test_one "配额" "$_tok" "$_hub"  "$_th_qt" "$_ts"
+                _tg_test_one "DDNS" "$_tok" "$_hub"  "$_th_dd" "$_ts"
                 pause ;;
             0|"") return ;;
             *) continue ;;
@@ -5528,824 +5484,14 @@ _do_uninstall_menu() {
 
 
 # ==============================================================================
-# 中转监控模块（内嵌，原 relay-monitor.sh）
+# 流量配额常量
 # ==============================================================================
-
-readonly MONITOR_DIR="/opt/proxy-manager/monitor"
-readonly MONITOR_DATA_DIR="${MONITOR_DIR}/data"
 
 readonly QUOTA_DIR="${WORK_DIR}/quota"
 readonly QUOTA_CONFIG="${QUOTA_DIR}/quota.conf"
 readonly QUOTA_DATA="${QUOTA_DIR}/quota.data"
 readonly QUOTA_CHAIN_IN="QUOTA_IN"
 readonly QUOTA_CHAIN_OUT="QUOTA_OUT"
-
-readonly CHECK_INTERVAL=30
-readonly PROBE_COUNT=10     # 10包：丢包率分辨率10%，比5包的20%精细一倍
-readonly PROBE_INTERVAL=0.3 # 包间隔300ms，分散采样，抗瞬间抖动
-readonly PROBE_TIMEOUT=2.0  # 超时2s，兼容高延迟国际线路
-readonly PROBE_SCRIPT_PATH="/usr/local/lib/ipt_prxy/probe.py"
-readonly PROBE_SCRIPT_VER="1.1"
-readonly LOSS_WARN=5
-readonly LOSS_CRIT=15
-readonly JITTER_WARN=20    # ms：延迟标准差超过此值扣分
-readonly JITTER_CRIT=50    # ms：延迟标准差超过此值重度扣分
-readonly DATA_RETENTION_DAYS=7
-
-# 安全读取配置（不 source，防止代码注入）
-load_config() {
-    _tg_resolve_channel monitor
-    if [[ -z "$TG_BOT_TOKEN" || -z "$TG_CHAT_ID" ]]; then
-        die "未找到监控推送配置，请先在菜单选项 5 中配置 Telegram"
-    fi
-}
-
-# 从缓存推导本机节点标识，格式: HK_197
-get_node_id() {
-    # 默认给 TG 通知用：纯 ASCII 名前置国旗 + # 标签（🇺🇸 #Tag），与 SSH 推送格式一致。
-    # 传 "plain" 则不加 # —— 终端显示用（# 是 Telegram 话题标签，终端里没意义）。
-    local _plain="${1:-}" _hash="#"
-    [[ "$_plain" == "plain" ]] && _hash=""
-    # 优先使用 SSH 监控配置的服务器别名
-    local _ssh_name
-    _ssh_name=$(grep "^SERVER_NAME=" /etc/ssh-tg-monitor.conf 2>/dev/null | cut -d= -f2- | sed 's/^"//;s/"$//' || true)
-    if [[ -n "$_ssh_name" ]]; then
-        if [[ "$_ssh_name" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-            local _cc _flag=""
-            _cc=$(grep -E '^SERVER_COUNTRY_CODE=' "$CACHE_FILE" 2>/dev/null | head -1 | cut -d= -f2- | sed "s/^['\"]//;s/['\"]$//" || true)
-            if [[ ${#_cc} -eq 2 && "$_cc" =~ ^[A-Za-z]+$ ]]; then
-                _flag=$(python3 -c "cc='${_cc^^}'; print(chr(0x1F1E6+ord(cc[0])-65)+chr(0x1F1E6+ord(cc[1])-65),end='')" 2>/dev/null || true)
-            fi
-            echo "${_flag:+${_flag} }${_hash}${_ssh_name}"
-        else
-            echo "$_ssh_name"
-        fi
-        return
-    fi
-
-    local ip="" cc=""
-    if [[ -f "$CACHE_FILE" ]]; then
-        ip=$(grep -E '^SERVER_IP='           "$CACHE_FILE" | head -1 | cut -d= -f2- | sed "s/^['\"]//;s/['\"]$//" || true)
-        cc=$(grep -E '^SERVER_COUNTRY_CODE=' "$CACHE_FILE" | head -1 | cut -d= -f2- | sed "s/^['\"]//;s/['\"]$//" || true)
-    fi
-    if [[ -z "$ip" ]]; then
-        ip=$(curl -sf --max-time 5 https://api.ipify.org 2>/dev/null || echo "")
-    fi
-    local last="${ip##*.}"
-    cc="${cc:-UN}"
-    [[ -n "$last" ]] && echo "${_hash}${cc}_${last}" || echo "${_hash}${cc}"
-}
-
-# 规范化链式别名的分隔符显示（" → " 统一间距）；保持各段原样透传
-highlight_local() {
-    local alias=$1
-    if [[ "$alias" != *" → "* ]]; then
-        printf '%s' "$alias"
-        return
-    fi
-    printf '%s' "$alias" | awk 'BEGIN { FS=" → " } {
-        if (NF == 2) {
-            print $1 " → " $2
-        } else {
-            r = $1
-            for (i = 2; i <= NF-2; i++) r = r " → " $i
-            r = r " → " $(NF-1) " → " $NF
-            print r
-        }
-    }'
-}
-
-setup_config() {
-    mkdir -p "$MONITOR_DIR"
-    printf "${C_CYAN}=== 配置 Relay 监控 ===${C_RESET}\n\n"
-
-    _tg_resolve_channel monitor
-    if [[ -z "$TG_BOT_TOKEN" || -z "$TG_CHAT_ID" ]]; then
-        die "未找到 TG 配置，请先在主菜单 ★4「TG 推送配置」中设置话题群和话题 ID"
-    fi
-    msg_info "使用 Token: ${TG_BOT_TOKEN:0:20}...  Chat ID: ${TG_CHAT_ID}${TG_THREAD_ID:+  话题: ${TG_THREAD_ID}}"
-
-    install_relay_services
-    send_daily_report
-}
-
-# 对单个端点执行 PROBE_COUNT 次 TCP 探测，包间隔 PROBE_INTERVAL 秒
-# 输出: "avg_ms min_ms max_ms loss_pct jitter_ms"
-# jitter = max - min，反映延迟稳定性
-tcping_check() {
-    local host=$1 port=$2
-    local success=0 total_ms=0 min_ms=999999 max_ms=0
-    local -a times=()
-    # PROBE_TIMEOUT 可能是小数(2.0)，nc/socat 需要整数秒
-    local _to=${PROBE_TIMEOUT%.*}
-    [[ -z "$_to" || "$_to" == "0" ]] && _to=2
-    # 工具检测一次，10次探测复用
-    local _probe_tool
-    command -v nc &>/dev/null && _probe_tool="nc" || _probe_tool="socat"
-
-    local i
-    for (( i=1; i<=PROBE_COUNT; i++ )); do
-        # 第一包不等待，后续包间隔 PROBE_INTERVAL
-        # read -t 是 bash 内建，替代 sleep 子进程
-        (( i > 1 )) && read -t "$PROBE_INTERVAL" -r _ 2>/dev/null || true
-        # $EPOCHREALTIME 是 bash 5.0+ 内建变量，替代 date +%s%3N 子进程
-        # 格式: 秒.微秒，去掉小数点后取前13位得到毫秒
-        local _er_start=${EPOCHREALTIME/./} _er_end
-        local _ok=false
-        if [[ "$_probe_tool" == "nc" ]]; then
-            nc -z -w "$_to" "$host" "$port" 2>/dev/null && _ok=true
-        else
-            socat /dev/null "TCP4:${host}:${port},connect-timeout=${_to}" 2>/dev/null && _ok=true
-        fi
-        if $_ok; then
-            _er_end=${EPOCHREALTIME/./}
-            local elapsed=$(( ${_er_end:0:13} - ${_er_start:0:13} ))
-            success=$(( success + 1 ))
-            total_ms=$(( total_ms + elapsed ))
-            times+=("$elapsed")
-            (( elapsed < min_ms )) && min_ms=$elapsed
-            (( elapsed > max_ms )) && max_ms=$elapsed
-        fi
-    done
-
-    local loss
-    loss=$(( (PROBE_COUNT - success) * 100 / PROBE_COUNT ))
-
-    if [[ $success -eq 0 ]]; then
-        echo "0 0 0 100 0"
-    else
-        local avg_ms
-        avg_ms=$((total_ms / success))
-        [[ $min_ms -eq 999999 ]] && min_ms=0
-        # 真实抖动：相邻成功探测差值的绝对均值
-        local jitter=0
-        if [[ ${#times[@]} -ge 2 ]]; then
-            local sum_diff=0 j diff
-            for (( j=1; j<${#times[@]}; j++ )); do
-                diff=$(( times[j] - times[j-1] ))
-                [[ $diff -lt 0 ]] && diff=$(( -diff ))
-                sum_diff=$(( sum_diff + diff ))
-            done
-            jitter=$(( sum_diff / (${#times[@]} - 1) ))
-        fi
-        echo "$avg_ms $min_ms $max_ms $loss $jitter"
-    fi
-}
-
-# 写入 Python asyncio 探测脚本（版本变更时自动重写）
-_ensure_probe_script() {
-    if [[ -f "$PROBE_SCRIPT_PATH" ]] && \
-       grep -q "# ipt_probe_ver:${PROBE_SCRIPT_VER}" "$PROBE_SCRIPT_PATH" 2>/dev/null; then
-        return 0
-    fi
-    mkdir -p "$(dirname "$PROBE_SCRIPT_PATH")"
-    cat > "$PROBE_SCRIPT_PATH" << 'PYEOF'
-#!/usr/bin/env python3
-# ipt_probe_ver:1.1
-import asyncio, json, sys, time, socket, struct
-
-def _args():
-    try:
-        count    = int(sys.argv[1])
-        interval = float(sys.argv[2])
-        timeout  = float(sys.argv[3])
-    except (IndexError, ValueError):
-        count, interval, timeout = 10, 0.3, 2.0
-    nodes = []
-    for arg in sys.argv[4:]:
-        try:
-            h, p = arg.rsplit(":", 1)
-            nodes.append((h, int(p)))
-        except ValueError:
-            pass
-    return count, interval, timeout, nodes
-
-async def probe_node(host, port, count, interval, timeout):
-    times = []
-    for i in range(count):
-        if i > 0:
-            await asyncio.sleep(interval)
-        t0 = time.perf_counter()
-        try:
-            _, w = await asyncio.wait_for(
-                asyncio.open_connection(host, port), timeout=timeout)
-            ms = (time.perf_counter() - t0) * 1000
-            # SO_LINGER=0: 发 RST 代替 FIN，连接立即消失，不进入 TIME-WAIT
-            sock = w.transport.get_extra_info('socket')
-            if sock:
-                sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER,
-                                struct.pack('ii', 1, 0))
-            w.close()
-            times.append(ms)
-        except Exception:
-            pass
-    n = len(times)
-    loss = round((count - n) * 100 / count)
-    if n == 0:
-        return {"host": host, "port": port,
-                "avg": 0, "min": 0, "max": 0, "loss": 100, "jitter": 0}
-    avg = sum(times) / n
-    jitter = (sum(abs(times[i] - times[i-1]) for i in range(1, n)) / (n - 1)
-              if n > 1 else 0)
-    return {"host": host, "port": port,
-            "avg": round(avg, 1), "min": round(min(times), 1),
-            "max": round(max(times), 1), "loss": loss, "jitter": round(jitter, 1)}
-
-async def main():
-    count, interval, timeout, nodes = _args()
-    if not nodes:
-        print("[]")
-        return
-    results = await asyncio.gather(
-        *[probe_node(h, p, count, interval, timeout) for h, p in nodes])
-    print(json.dumps(list(results), separators=(",", ":")))
-
-asyncio.run(main())
-PYEOF
-    chmod 644 "$PROBE_SCRIPT_PATH"
-}
-
-# 批量并发探测：一次 Python 调用替代多个子 shell + nc
-# 参数: host:port ...
-# 输出: 每行 "avg min max loss jitter"，顺序与输入一致
-_tcping_batch() {
-    _ensure_probe_script
-    python3 "$PROBE_SCRIPT_PATH" \
-        "$PROBE_COUNT" "$PROBE_INTERVAL" "$PROBE_TIMEOUT" "$@" \
-    | jq -r '.[] | "\(.avg) \(.min) \(.max) \(.loss) \(.jitter)"'
-}
-
-get_data_file() {
-    echo "${MONITOR_DATA_DIR}/$(TZ="$TZ_DEFAULT" date '+%Y-%m-%d').dat"
-}
-
-# 写入一行检测记录（TAB 分隔）
-# 格式: timestamp \t port \t alias \t avg_ms \t min_ms \t max_ms \t loss_pct \t jitter_ms
-log_result() {
-    local port=$1 alias=$2 avg=$3 min=$4 max=$5 loss=$6 jitter=${7:-0}
-    local safe_alias="${alias//$'\t'/ }"
-    safe_alias="${safe_alias//$'\n'/ }"
-    safe_alias="${safe_alias//$'\r'/ }"
-    mkdir -p "$MONITOR_DATA_DIR"
-    local data_file
-    data_file=$(get_data_file)
-    # 防止 .dat 无限增长：超过 DATA_MAX_LINES 行时按时间戳裁剪，保留最近 25h 数据
-    # 按时间戳裁剪而非行数，确保无论规则数多少 daily 始终有完整 24h 覆盖
-    (
-        flock -x -w 5 200 || { msg_warn "写入锁超时，跳过本轮"; return; }
-        local _lines
-        _lines=$(wc -l < "$data_file" 2>/dev/null || echo 0)
-        if [[ $_lines -gt ${DATA_MAX_LINES:-500000} ]]; then
-            local _trim_tmp _cutoff
-            _trim_tmp=$(mktemp)
-            _cutoff=$(( $(date +%s) - 90000 ))
-            awk -F'\t' -v c="$_cutoff" 'NF>=7 && $1+0 >= c' "$data_file" > "$_trim_tmp" \
-                && mv "$_trim_tmp" "$data_file" || rm -f "$_trim_tmp"
-        fi
-        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-            "$(date +%s)" "$port" "$safe_alias" "$avg" "$min" "$max" "$loss" "$jitter" \
-            >> "$data_file"
-    ) 200>"${data_file}.lock"
-}
-
-# 从 Realm 配置读取所有端点，输出 "r_host r_port l_port alias" 行列表
-get_realm_endpoints() {
-    if [[ ! -f "$REALM_CONFIG_FILE" ]]; then return; fi
-    jq -c '.endpoints[]' "$REALM_CONFIG_FILE" 2>/dev/null | while IFS= read -r ep; do
-        local listen remote l_port r_host r_port alias
-        listen=$(echo "$ep" | jq -r '.listen')
-        remote=$(echo "$ep" | jq -r '.remote')
-        l_port=$(echo "$listen" | cut -d: -f2)
-        r_host=$(echo "$remote" | cut -d: -f1)
-        r_port=$(echo "$remote" | cut -d: -f2)
-        alias=""
-        if [[ -f "$REALM_META_FILE" ]]; then
-            alias=$(jq -r --arg p "$l_port" '.[$p].alias // empty' \
-                "$REALM_META_FILE" 2>/dev/null || true)
-        fi
-        [[ -z "$alias" ]] && alias="${l_port} → ${r_host}:${r_port}"
-        printf '%s\t%s\t%s\t%s\n' "$r_host" "$r_port" "$l_port" "$alias"
-    done
-}
-
-run_daemon() {
-    msg_info "中转监控守护进程启动 (检测间隔 ${CHECK_INTERVAL}s，探测 ${PROBE_COUNT} 包/轮)"
-
-    # 守护进程被 systemd 停止时 (SIGTERM) 清理本轮临时目录
-    local _daemon_cur_tmp=""
-    trap 'rm -rf "$_daemon_cur_tmp" 2>/dev/null; exit 0' SIGTERM SIGINT
-
-    mkdir -p "$MONITOR_DATA_DIR"
-    find "$MONITOR_DATA_DIR" -name "*.dat" \
-        -mtime +"$DATA_RETENTION_DAYS" -delete 2>/dev/null || true
-
-    declare -A _consec_fail=()
-    # "已告警未恢复"状态以冷却文件存在与否为准（落盘），守护进程重启后仍能补发恢复通知，不丢事件
-    local _cooldown_dir="/run/relay-dead-notify"
-    mkdir -p "$_cooldown_dir"
-    local _node_id
-    _node_id=$(get_node_id)
-
-    while true; do
-        local t_round_start
-        t_round_start=$(date +%s)
-
-        if [[ -f "$REALM_CONFIG_FILE" ]]; then
-            local tmp_dir
-            tmp_dir=$(mktemp -d)
-            _daemon_cur_tmp="$tmp_dir"
-            # 收集所有端点，保持顺序（asyncio.gather 保序，结果可按下标对应）
-            local -a _rh_arr=() _rp_arr=() _lp_arr=() _alias_arr=() _node_args=()
-            while IFS=$'\t' read -r r_host r_port l_port alias; do
-                [[ -z "$r_host" ]] && continue
-                _rh_arr+=("$r_host"); _rp_arr+=("$r_port")
-                _lp_arr+=("$l_port"); _alias_arr+=("$alias")
-                _node_args+=("${r_host}:${r_port}")
-            done < <(get_realm_endpoints)
-            # 一次 Python 调用并发探测所有节点，替代 N 个子 shell + N×10 个 nc
-            local -a _batch=()
-            if [[ ${#_node_args[@]} -gt 0 ]]; then
-                while IFS= read -r _line; do
-                    _batch+=("$_line")
-                done < <(_tcping_batch "${_node_args[@]}" 2>/dev/null)
-            fi
-            # 写入结果文件（格式与原逻辑完全一致，下游代码无需改动）
-            local _idx
-            for (( _idx=0; _idx<${#_rh_arr[@]}; _idx++ )); do
-                local _lp="${_lp_arr[$_idx]}" _al="${_alias_arr[$_idx]}"
-                local _avg _min _max _loss _jitter
-                read -r _avg _min _max _loss _jitter <<< "${_batch[$_idx]:-0 0 0 100 0}"
-                printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-                    "$_lp" "$_al" "$_avg" "$_min" "$_max" "$_loss" "$_jitter" \
-                    > "${tmp_dir}/${_lp}.result"
-            done
-
-            # 统计本轮失败数：全部端点同时100%丢包 = 本机网络中断，跳过写入避免污染统计
-            local _total_eps=0 _failed_eps=0
-            for f in "${tmp_dir}"/*.result; do
-                [[ -f "$f" ]] || continue
-                _total_eps=$((_total_eps + 1))
-                local _chk_loss
-                _chk_loss=$(cut -f6 "$f" 2>/dev/null || echo "0")
-                [[ "$_chk_loss" == "100" ]] && _failed_eps=$((_failed_eps + 1))
-            done
-
-            local _write=true
-            if [[ $_total_eps -ge 1 && $_total_eps -eq $_failed_eps ]]; then
-                msg_warn "本轮全部 ${_total_eps} 条线路不可达，疑似本机网络中断，跳过写入"
-                _write=false
-            fi
-
-            if [[ "$_write" == true ]]; then
-                for f in "${tmp_dir}"/*.result; do
-                    [[ -f "$f" ]] || continue
-                    local l_port alias avg min max loss jitter
-                    IFS=$'\t' read -r l_port alias avg min max loss jitter < "$f"
-                    log_result "$l_port" "$alias" "$avg" "$min" "$max" "$loss" "$jitter" || true
-                    echo "[probe] ${alias} | ${avg}ms (${min}-${max}ms) | 丢包 ${loss}% | 抖动 ${jitter}ms"
-
-                    local _cooldown_file="${_cooldown_dir}/${l_port}"
-                    if [[ "$loss" == "100" ]]; then
-                        _consec_fail[$l_port]=$(( ${_consec_fail[$l_port]:-0} + 1 ))
-                        if [[ ${_consec_fail[$l_port]} -ge 3 ]]; then
-                            local _last_ts=0
-                            [[ -f "$_cooldown_file" ]] && _last_ts=$(cat "$_cooldown_file" 2>/dev/null || echo 0)
-                            local _now_ts
-                            _now_ts=$(date +%s)
-                            if (( _now_ts - _last_ts >= 4 * 3600 )); then
-                                # 冷却文件存在 = 已发过"不可达"告警；落盘后即便守护进程重启，恢复时仍能据此补发恢复通知
-                                echo "$_now_ts" > "$_cooldown_file"
-                                local _now_str
-                                _now_str=$(TZ="$TZ_DEFAULT" date '+%m-%d %H:%M')
-                                send_telegram "🔴 #节点不可达   ${_node_id}
-🕐 ${_now_str}
-━━━━━━━━━━━━━━━━━
-节点: ${alias}
-连续 3 轮 100% 丢包" || true
-                            fi
-                        fi
-                    else
-                        # 冷却文件存在说明之前发过"不可达"告警，现已恢复 → 推送恢复并清除状态
-                        if [[ -f "$_cooldown_file" ]]; then
-                            rm -f "$_cooldown_file"
-                            local _now_str
-                            _now_str=$(TZ="$TZ_DEFAULT" date '+%m-%d %H:%M')
-                            send_telegram "🟢 #节点已恢复   ${_node_id}
-🕐 ${_now_str}
-━━━━━━━━━━━━━━━━━
-节点: ${alias}
-延迟: ${avg}ms | 丢包: ${loss}%" || true
-                        fi
-                        _consec_fail[$l_port]=0
-                    fi
-                done
-            fi
-            rm -rf "$tmp_dir" 2>/dev/null || true
-            _daemon_cur_tmp=""
-        fi
-
-        local elapsed remaining
-        elapsed=$(( $(date +%s) - t_round_start ))
-        remaining=$(( CHECK_INTERVAL - elapsed ))
-        [[ $remaining -gt 0 ]] && sleep "$remaining"
-    done
-}
-
-# 聚合指定时间范围内的数据
-# 参数: data_file  since_ts
-# 输出每行: port \t alias \t avg_ms \t min_ms \t max_ms \t max_loss \t avg_loss \t count \t avg_jitter
-aggregate_data() {
-    local data_file=$1
-    local since_ts=$2
-
-    [[ ! -f "$data_file" ]] && return
-
-    awk -F'\t' -v since="$since_ts" '
-    NF >= 7 && $1+0 >= since {
-        port  = $2
-        alias = $3
-        avg   = $4+0; mx = $6+0; loss = $7+0
-        jit   = (NF >= 8) ? $8+0 : ($6+0 - $5+0)
-
-        if (!(port in cnt)) {
-            aliases[port]     = alias
-            sum_avg[port]     = 0
-            sum_sq[port]      = 0
-            sum_loss[port]    = 0
-            sum_jitter[port]  = 0
-            g_max[port]       = 0
-            cnt[port]         = 0
-            max_jit[port]     = 0
-            jit_spikes[port]  = 0
-            loss_rounds[port] = 0
-            cur_streak[port]  = 0
-            max_streak[port]  = 0
-        }
-        cnt[port]++
-        sum_avg[port]    += avg
-        sum_sq[port]     += avg * avg
-        sum_loss[port]   += loss
-        sum_jitter[port] += jit
-        if (mx > g_max[port])                g_max[port]  = mx
-        if (jit > max_jit[port])             max_jit[port] = jit
-        if (jit > 5)                         jit_spikes[port]++
-        if (loss > 0)                        loss_rounds[port]++
-        if (loss >= 100) {
-            cur_streak[port]++
-            if (cur_streak[port] > max_streak[port]) max_streak[port] = cur_streak[port]
-        } else {
-            cur_streak[port] = 0
-        }
-    }
-    END {
-        for (port in cnt) {
-            a_avg    = sum_avg[port] / cnt[port]
-            a_loss   = sprintf("%.2f", sum_loss[port] / cnt[port])
-            a_jitter = sum_jitter[port] / cnt[port]
-            variance = sum_sq[port] / cnt[port] - a_avg * a_avg
-            stddev   = (variance > 0) ? sqrt(variance) : 0
-            loss_pct = sprintf("%.1f", loss_rounds[port] * 100.0 / cnt[port])
-            jit_pct  = sprintf("%.1f", jit_spikes[port]  * 100.0 / cnt[port])
-            printf "%s\t%s\t%.1f\t%.1f\t%.1f\t%d\t%s\t%d\t%.1f\t%.1f\t%s\t%s\n",
-                port, aliases[port], a_avg, stddev, g_max[port],
-                max_streak[port], a_loss, cnt[port], a_jitter,
-                max_jit[port], jit_pct, loss_pct
-        }
-    }
-    ' "$data_file"
-}
-
-refresh_aliases() {
-    # 从 get_realm_endpoints() 建查找表（含 metadata + fallback），覆盖数据文件里的旧别名
-    # 输入/输出格式: port \t alias \t ...（其余字段原样透传）
-    local -A _live
-    while IFS=$'\t' read -r r_host r_port l_port alias; do
-        _live["$l_port"]="$alias"
-    done < <(get_realm_endpoints 2>/dev/null || true)
-
-    while IFS=$'\t' read -r port alias rest; do
-        [[ -n "${_live[$port]:-}" ]] && alias="${_live[$port]}"
-        printf '%s\t%s\t%s\n' "$port" "$alias" "$rest"
-    done
-}
-
-classify_line() {
-    # Returns: ok | warn | crit | dead
-    # Scoring: avg_loss(40/20) + max_streak(20/10) + jitter(20/8), tier at ≥40/≥8/0
-    # max_streak: 连续 100% 丢包轮次；≥6轮(~3min)→crit加分，≥2轮(~1min)→warn加分
-    local avg_loss=$1 max_streak=$2 avg_jitter=$3
-    awk -v al="$avg_loss" -v ms="$max_streak" -v aj="$avg_jitter" \
-        -v lw="$LOSS_WARN" -v lc="$LOSS_CRIT" \
-        -v jw="$JITTER_WARN" -v jc="$JITTER_CRIT" \
-    'BEGIN {
-        if (al+0 >= 100) { print "dead"; exit }
-        score = 0
-        if      (al+0 >= lc+0) score += 40
-        else if (al+0 >= lw+0) score += 20
-        if      (ms+0 >= 6)    score += 20
-        else if (ms+0 >= 2)    score += 10
-        if      (aj+0 >= jc+0) score += 20
-        else if (aj+0 >= jw+0) score += 8
-        if      (score >= 40)  print "crit"
-        else if (score >= 8)   print "warn"
-        else                   print "ok"
-    }'
-}
-
-sort_by_tier() {
-    # Prepend tier number, sort (tier→avg_loss→jitter→peak), strip tier column
-    # Ensures ranking order matches icon classification
-    local input="$1"
-    while IFS=$'\t' read -r port alias avg_ms stddev_ms max_ms max_streak avg_loss count avg_jitter max_jitter jitter_pct loss_pct; do
-        local t
-        case $(classify_line "$avg_loss" "$max_streak" "$avg_jitter") in
-            ok)   t=0 ;; warn) t=1 ;; crit) t=2 ;; dead) t=3 ;; *) t=0 ;;
-        esac
-        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-            "$t" "$port" "$alias" "$avg_ms" "$stddev_ms" "$max_ms" "$max_streak" "$avg_loss" "$count" "$avg_jitter" "$max_jitter" "$jitter_pct" "$loss_pct"
-    done <<< "$input" | sort -t$'\t' -k1,1n -k8,8g -k10,10g -k7,7n | cut -f2-
-}
-
-loss_emoji() {
-    local avg_loss=$1 max_loss=$2 avg_jitter=$3
-    case $(classify_line "$avg_loss" "$max_loss" "$avg_jitter") in
-        dead) printf '🔴' ;;
-        crit) printf '🔴' ;;
-        warn) printf '🟡' ;;
-        *)    printf '🟢' ;;
-    esac
-}
-
-
-
-# 从已排序数据构建报告正文与排名，结果写入全局临时变量:
-#   _rpt_body  _rpt_ranking  _rpt_ok  _rpt_warn  _rpt_crit  _rpt_dead
-# $1=sorted_rows  $2=不可达标签(默认"全程不可达")
-_build_report_content() {
-    local sorted_rows="$1"
-    local unreachable_label="${2:-全程不可达}"
-    _rpt_body=""; _rpt_ranking=""
-    _rpt_ok=0; _rpt_warn=0; _rpt_crit=0; _rpt_dead=0; _rpt_rounds=0
-    local rank=1
-    while IFS=$'\t' read -r port alias avg_ms stddev_ms max_ms max_streak avg_loss count avg_jitter max_jitter jitter_pct loss_pct; do
-        [[ ${count:-0} -gt $_rpt_rounds ]] && _rpt_rounds=$count
-        local icon display_alias
-        icon=$(loss_emoji "$avg_loss" "$max_streak" "$avg_jitter")
-        display_alias=$(highlight_local "$alias")
-        case $(classify_line "$avg_loss" "$max_streak" "$avg_jitter") in
-            dead) _rpt_dead=$((_rpt_dead + 1)) ;;
-            crit) _rpt_crit=$((_rpt_crit + 1)) ;;
-            warn) _rpt_warn=$((_rpt_warn + 1)) ;;
-            *)    _rpt_ok=$((_rpt_ok + 1)) ;;
-        esac
-        if [[ ${avg_ms%%.*} -eq 0 && ${avg_loss%.*} -eq 100 ]]; then
-            _rpt_body+="
-${icon} ${display_alias}
-   ${unreachable_label}  丢包 100%
-────────────────────────"
-        else
-            _rpt_body+="
-${icon} ${display_alias}
-   延迟 ${avg_ms}ms ±${stddev_ms}ms / 高${max_ms}ms
-   丢包 ${avg_loss}%  |  连续断 ${max_streak} 轮  |  轮占 ${loss_pct}%
-   抖动 ${avg_jitter}ms  |  峰值 ${max_jitter}ms  |  >5ms ${jitter_pct}%
-────────────────────────"
-        fi
-        local _sep
-        _sep="╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌"
-        _rpt_ranking+="
-${_sep}
- ${rank}. ${icon} ${display_alias}
- 延迟: <u><b>${avg_ms} ms / ${stddev_ms} ms / ${max_ms} ms</b></u>（均/σ/高）
- 丢包: <u><b>${avg_loss} % / ${max_streak} R / ${loss_pct} %</b></u>（率/断/占）
- 抖动: <u><b>${avg_jitter} ms / ${max_jitter} ms / ${jitter_pct} %</b></u>（均/峰/频）"
-        rank=$((rank + 1))
-    done <<< "$sorted_rows"
-}
-
-send_daily_report() {
-    # 滚动24小时窗口：合并昨天+今天的数据，取最近24h内的记录
-    # 不足24小时时有多少统计多少
-    local now since
-    now=$(date +%s)
-    since=$((now - 86400))
-
-    local _today_file _yesterday_file _combined
-    _today_file=$(get_data_file)
-    _yesterday_file="${MONITOR_DATA_DIR}/$(TZ="$TZ_DEFAULT" date -d 'yesterday' '+%Y-%m-%d' 2>/dev/null \
-        || TZ="$TZ_DEFAULT" date -v-1d '+%Y-%m-%d' 2>/dev/null || echo "").dat"
-    _combined=$(mktemp)
-    trap "rm -f '$_combined'" RETURN
-    [[ -f "$_yesterday_file" ]] && cat "$_yesterday_file" >> "$_combined" 2>/dev/null || true
-    [[ -f "$_today_file"     ]] && cat "$_today_file"     >> "$_combined" 2>/dev/null || true
-
-    local rows
-    rows=$(aggregate_data "$_combined" "$since" | refresh_aliases)
-    rm -f "$_combined"
-
-    if [[ -z "$rows" ]]; then
-        msg_warn "日报：无数据，跳过推送"
-        return
-    fi
-
-    local sorted_rows
-    sorted_rows=$(sort_by_tier "$rows")
-
-    _build_report_content "$sorted_rows" "期间不可达"
-    local ranking="$_rpt_ranking"
-    local ok_rules=$_rpt_ok warn_rules=$_rpt_warn crit_rules=$_rpt_crit dead_rules=$_rpt_dead
-    local total_rules=$(( _rpt_ok + _rpt_warn + _rpt_crit + _rpt_dead ))
-
-    local node_id
-    node_id=$(get_node_id)
-
-    local time_end time_start
-    time_end=$(TZ="$TZ_DEFAULT" date '+%m-%d %H:%M')
-    time_start=$(TZ="$TZ_DEFAULT" date -d "@$since" '+%m-%d %H:%M' 2>/dev/null \
-              || TZ="$TZ_DEFAULT" date -r "$since" '+%m-%d %H:%M' 2>/dev/null || echo "N/A")
-
-    local msg_ranking
-    msg_ranking="📊 Realm 24h 稳定性排名 ${node_id}
-🕐 <b>${time_start} → ${time_end}</b>${ranking}
-╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
-汇总: 共 ${total_rules} 条 ｜ 🟢 ${ok_rules} ｜ 🟡 ${warn_rules} ｜ 🔴 $(( crit_rules + dead_rules ))
-📡 间隔 ${CHECK_INTERVAL}s | 探测 ${PROBE_COUNT} 包/次 | 共 ${_rpt_rounds} 轮"
-    if send_telegram "$msg_ranking" "${node_id//[^a-zA-Z0-9_]/}"; then
-        msg_info "24h稳定性排名已推送到 Telegram ✓"
-    else
-        msg_warn "24h稳定性排名推送失败"
-    fi
-}
-
-install_relay_services() {
-    [[ $EUID -ne 0 ]] && die "需要 root 权限"
-    msg_step "安装中转监控 Systemd 服务..."
-
-    local script_path
-    script_path=$(realpath "$0")
-
-    local _unit_dir="/etc/systemd/system"
-    local _tmp
-    _tmp=$(mktemp -d)
-    trap "rm -rf '$_tmp'" RETURN
-
-    cat > "${_tmp}/relay-monitor.service" <<EOF
-[Unit]
-Description=Relay TCPing Monitor Daemon
-After=network.target realm.service
-Wants=network.target
-
-[Service]
-Type=simple
-ExecStart=/bin/bash "${script_path}" daemon
-Restart=always
-RestartSec=15
-NoNewPrivileges=true
-PrivateTmp=true
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    # 计算基于 machine-id 的固定时间槽：UTC+8 10:00–12:00（对应 UTC 02:00–04:00）
-    local _mid _offset _total _hh _mm _ss _hh_cst _on_cal _on_cal_cst
-    _mid=$(cat /etc/machine-id 2>/dev/null || hostname)
-    _offset=$(( 0x$(printf '%s' "$_mid" | md5sum | cut -c1-8) % 7200 ))
-    _total=$(( 7200 + _offset ))
-    _hh=$(( _total / 3600 ))
-    _mm=$(( (_total % 3600) / 60 ))
-    _ss=$(( _total % 60 ))
-    _hh_cst=$(( (_hh + 8) % 24 ))
-    _on_cal=$(printf "*-*-* %02d:%02d:%02d UTC" "$_hh" "$_mm" "$_ss")
-    _on_cal_cst=$(printf "%02d:%02d:%02d" "$_hh_cst" "$_mm" "$_ss")
-
-    cat > "${_tmp}/relay-monitor-daily.service" <<EOF
-[Unit]
-Description=Relay Monitor Daily Report - Ranking
-
-[Service]
-Type=oneshot
-ExecStart=/bin/bash "${script_path}" daily
-Environment=TZ="$TZ_DEFAULT"
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ReadWritePaths=/opt/proxy-manager /var/log/proxy-manager.log
-EOF
-
-    cat > "${_tmp}/relay-monitor-daily.timer" <<EOF
-[Unit]
-Description=Relay Monitor Daily Ranking Report Timer
-
-[Timer]
-OnCalendar=${_on_cal}
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-EOF
-
-    # 原子性移入目标目录
-    for _f in relay-monitor.service relay-monitor-daily.service relay-monitor-daily.timer; do
-        mv "${_tmp}/${_f}" "${_unit_dir}/${_f}"
-    done
-
-    # 清理旧的小时定时器和旧的 daily-body 定时器（如有遗留）
-    for _unit in relay-monitor-hourly relay-monitor-daily-body; do
-        systemctl stop    "${_unit}.timer"   2>/dev/null || true
-        systemctl disable "${_unit}.timer"   2>/dev/null || true
-        rm -f "/etc/systemd/system/${_unit}.service" \
-              "/etc/systemd/system/${_unit}.timer"
-    done
-
-    systemctl daemon-reload
-    systemctl enable relay-monitor.service       || msg_warn "启用 relay-monitor.service 失败"
-    systemctl enable relay-monitor-daily.timer   || msg_warn "启用 relay-monitor-daily.timer 失败"
-    systemctl start  relay-monitor-daily.timer   || msg_warn "启动 relay-monitor-daily.timer 失败"
-    systemctl restart relay-monitor.service      || msg_warn "启动 relay-monitor.service 失败"
-
-    msg_info "守护进程已启动  → relay-monitor.service"
-    msg_info "排名定时器已启动 → relay-monitor-daily.timer (每日 ${_on_cal_cst} UTC+8)"
-    printf "\n${C_GREEN}安装完成！24h稳定性排名推送时间: %s UTC+8 (UTC+8 10:00–12:00 随机槽)${C_RESET}\n" "$_on_cal_cst"
-}
-
-uninstall_relay_services() {
-    [[ $EUID -ne 0 ]] && die "需要 root 权限"
-    printf "${C_RED}确认卸载中转监控服务? [y/N]: ${C_RESET}"
-    read -r ans
-    [[ "${ans,,}" != "y" ]] && return
-
-    for unit in relay-monitor relay-monitor-hourly relay-monitor-daily relay-monitor-daily-body; do
-        systemctl stop    "${unit}.service" 2>/dev/null || true
-        systemctl stop    "${unit}.timer"   2>/dev/null || true
-        systemctl disable "${unit}.service" 2>/dev/null || true
-        systemctl disable "${unit}.timer"   2>/dev/null || true
-        rm -f "/etc/systemd/system/${unit}.service" \
-              "/etc/systemd/system/${unit}.timer" 2>/dev/null || true
-    done
-    systemctl daemon-reload
-
-    printf "${C_YELLOW}是否同时删除历史监控数据? [y/N]: ${C_RESET}"
-    read -r del
-    [[ "${del,,}" == "y" ]] && rm -rf "$MONITOR_DIR" && msg_info "数据已删除"
-
-    msg_info "中转监控已卸载。"
-}
-
-show_relay_status() {
-    clear
-    printf "${C_CYAN}=== 中转监控状态 ===${C_RESET}\n\n"
-
-    printf "守护进程: "
-    if systemctl is-active --quiet relay-monitor.service 2>/dev/null; then
-        printf "${C_GREEN}运行中${C_RESET}\n"
-    else
-        printf "${C_RED}未运行${C_RESET}\n"
-    fi
-
-    local next_daily
-    next_daily=$(systemctl list-timers relay-monitor-daily.timer \
-        --no-pager 2>/dev/null | awk 'NR==2{print $1,$2}' || echo "N/A")
-    printf "24h排名推送: %s\n\n" "$next_daily"
-
-    local _today_file _yesterday_file _combined
-    _today_file=$(get_data_file)
-    _yesterday_file="${MONITOR_DATA_DIR}/$(TZ="$TZ_DEFAULT" date -d 'yesterday' '+%Y-%m-%d' 2>/dev/null \
-        || TZ="$TZ_DEFAULT" date -v-1d '+%Y-%m-%d' 2>/dev/null || echo "").dat"
-    if [[ ! -f "$_today_file" && ! -f "$_yesterday_file" ]]; then
-        printf "${C_YELLOW}暂无数据。${C_RESET}\n"
-        printf "\n${C_CYAN}按任意键返回...${C_RESET}"; read -rsn1; return
-    fi
-    _combined=$(mktemp)
-    trap "rm -f '$_combined'" RETURN
-    [[ -f "$_yesterday_file" ]] && cat "$_yesterday_file" >> "$_combined" 2>/dev/null || true
-    [[ -f "$_today_file"     ]] && cat "$_today_file"     >> "$_combined" 2>/dev/null || true
-
-    local now since rows
-    now=$(date +%s)
-    since=$((now - 86400))
-    rows=$(aggregate_data "$_combined" "$since" | refresh_aliases)
-
-    if [[ -z "$rows" ]]; then
-        printf "${C_YELLOW}最近 24 小时无数据。${C_RESET}\n"
-        printf "\n${C_CYAN}按任意键返回...${C_RESET}"; read -rsn1; return
-    fi
-
-    printf "${C_BLUE}最近 24 小时统计:${C_RESET}\n"
-    # 列对应 aggregate_data 输出: 均延迟 / 标准差σ / 最高 / 丢包% / 抖动（无 min 字段）
-    printf "%-32s %7s %7s %7s %8s %6s\n" "节点" "均延迟" "标准差" "最高" "丢包%" "抖动"
-    printf '%s\n' "────────────────────────────────────────────────────────────────────"
-
-    while IFS=$'\t' read -r port alias avg_ms min_ms max_ms max_loss avg_loss count avg_jitter max_jitter jitter_spikes loss_rounds; do
-        local icon
-        icon=$(loss_emoji "$avg_loss" "$max_loss" "$avg_jitter")
-        # aggregate_data 输出为浮点(%.1f)，%d 需整数 → 截掉小数避免 printf 报 invalid number
-        printf "%s %-30s %5dms %5dms %5dms %7s%% %5dms\n" \
-            "$icon" "${alias:0:30}" "${avg_ms%.*}" "${min_ms%.*}" "${max_ms%.*}" "$avg_loss" "${avg_jitter%.*}"
-    done <<< "$rows"
-
-    printf "\n${C_CYAN}按任意键返回...${C_RESET}"; read -rsn1
-}
 
 # ==============================================================================
 # 流量配额与到期管理模块
@@ -7211,7 +6357,7 @@ manage_quota_menu() {
             2) quota_delete_port    || true ;;
             3) quota_manual_pause   || true ;;
             4) quota_manual_resume  || true ;;
-            5) load_config; quota_daily_report || true ;;
+            5) quota_daily_report || true ;;
             6) install_quota_services  || true ;;
             7) uninstall_quota_services || true ;;
             0) return ;;
@@ -8654,41 +7800,6 @@ show_menu() {
         realm_ver_str="${C_CYAN}${realm_ver}${C_RESET}"
     fi
 
-    # 中转监控状态
-    local monitor_status monitor_info
-    if systemctl is-active --quiet relay-monitor.service 2>/dev/null; then
-        monitor_status="${C_GREEN}运行中${C_RESET}"
-        local _rule_cnt=0
-        if [[ -f "$REALM_CONFIG_FILE" ]]; then
-            _rule_cnt=$(jq '.endpoints | length' "$REALM_CONFIG_FILE" 2>/dev/null || echo 0)
-        fi
-        local _last=""
-        local _dat
-        _dat=$(get_data_file)
-        if [[ -f "$_dat" ]]; then
-            local _ts=0
-            if [[ -s "$_dat" ]]; then
-                _ts=$(tail -1 "$_dat" 2>/dev/null | cut -f1)
-                [[ "$_ts" =~ ^[0-9]+$ ]] || _ts=0
-            fi
-            if [[ "$_ts" -gt 0 ]]; then
-                local _age
-                _age=$(( $(date +%s) - ${_ts:-0} )) || _age=0
-                if [[ $_age -lt 60 ]]; then
-                    _last="  上次: ${_age}s前"
-                else
-                    _last="  上次: $(( _age / 60 ))m前"
-                fi
-            fi
-        fi
-        monitor_info="${C_CYAN}监控 ${_rule_cnt} 条规则${C_RESET}${_last}"
-    elif [[ -n "$(_tg_cfg_get "$TG_CONF" TG_THREAD_MONITOR)" ]]; then
-        monitor_status="${C_RED}未运行${C_RESET}"
-        monitor_info="${C_YELLOW}已配置，服务未启动${C_RESET}"
-    else
-        monitor_status="${C_RED}未配置${C_RESET}"
-        monitor_info="-"
-    fi
 
     # Fail2Ban
     if systemctl is-active --quiet fail2ban 2>/dev/null && [[ -f /etc/fail2ban/jail.d/sshd.conf ]]; then
@@ -8736,11 +7847,6 @@ show_menu() {
         printf "\n"
     else
         printf "   Realm Forwarding : [-]\n"
-    fi
-    if systemctl is-active --quiet relay-monitor.service 2>/dev/null; then
-        printf "   Relay Monitor    : %b  [%b]\n" "$monitor_status" "$monitor_info"
-    else
-        printf "   Relay Monitor    : [-]\n"
     fi
 
     # ---------- 防火墙状态 ----------
@@ -9149,14 +8255,6 @@ main() {
     esac
 
     case "${1:-}" in
-        daemon)
-            command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 \
-                || { echo "daemon 模式缺少依赖 (curl/jq)" >&2; exit 1; }
-            load_config; run_daemon; return ;;
-        daily)
-            command -v curl >/dev/null 2>&1 \
-                || { echo "daily 模式缺少 curl" >&2; exit 1; }
-            load_config; send_daily_report; return ;;
         quota-check)
             command -v iptables >/dev/null 2>&1 \
                 || { echo "quota-check 模式缺少 iptables" >&2; exit 1; }
@@ -9164,7 +8262,7 @@ main() {
         quota-daily)
             command -v curl >/dev/null 2>&1 \
                 || { echo "quota-daily 模式缺少 curl" >&2; exit 1; }
-            load_config; quota_daily_report; return ;;
+            quota_daily_report; return ;;
         ddns-run)
             command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 \
                 || { echo "ddns-run 模式缺少依赖 (curl/jq)" >&2; exit 1; }
