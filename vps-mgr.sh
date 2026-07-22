@@ -5436,12 +5436,14 @@ Wants=network-online.target
 Type=oneshot
 ExecStart=/bin/bash ${_self} auto-update
 EOF
+    # 固定用上海时区(而非机器本地时区)——各地机器在同一时刻统一更新，时间可预测：
+    # 每天上海 05:00 起、1 小时内随机触发(05:00~06:00)。你在上海 05:00 前把新正式版测好即可。
     cat > /etc/systemd/system/vps-mgr-autoupdate.timer <<'EOF'
 [Unit]
-Description=Daily vps-mgr auto-update check
+Description=Daily vps-mgr auto-update check (Shanghai 05:00-06:00)
 
 [Timer]
-OnCalendar=daily
+OnCalendar=*-*-* 05:00:00 Asia/Shanghai
 RandomizedDelaySec=3600
 Persistent=true
 
