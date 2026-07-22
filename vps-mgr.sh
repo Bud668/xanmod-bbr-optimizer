@@ -16,7 +16,7 @@ readonly SNELL_VERSION_OVERRIDE="v5.0.1"
 # SECTION 1: 全局常量
 # ==============================================================================
 
-readonly SCRIPT_VERSION="1.3.0"
+readonly SCRIPT_VERSION="1.3.1"
 readonly SELF_REPO="Bud668/vps-mgr"
 readonly TZ_DEFAULT="Asia/Shanghai"
 readonly WORK_DIR="/opt/proxy-manager"
@@ -2906,6 +2906,15 @@ DNSEOF
         echo -e "  ${YELLOW}⚠ 跳过（socat 不可用）${NC}"
     fi
 
+    # 自动更新（默认开启：每天检查正式版，预发布不动，坏版本被语法校验拦下）
+    echo -e "\n${L_BLUE}── [+] 自动更新 ──────────────────────────────────────────${NC}"
+    install_autoupdate
+    if systemctl is-active --quiet vps-mgr-autoupdate.timer 2>/dev/null; then
+        echo -e "  ${GREEN}✓ 已开启（每天检查正式版；预发布仅供手动测试）${NC}"
+    else
+        echo -e "  ${YELLOW}⚠ 开启失败${NC}"
+    fi
+
     # ── 汇总报告 ─────────────────────────────────────────────
     echo
     echo -e "${L_PURPLE}─────────────────── 初始化汇总 ─────────────────────────${NC}"
@@ -5357,23 +5366,30 @@ edit_config() {
 
 }
 
+# $1=auto 时为非交互模式（systemd 定时器调用）：不提问、不 exec、日志走 stdout(journal)。
+# 更新源固定 /releases/latest —— GitHub 只返回正式版，自动排除预发布，实现"预发布不自动更新"。
 self_update() {
-    local latest tmp_file self_path
+    local _mode="${1:-}" latest tmp_file self_path
     self_path=$(realpath "${BASH_SOURCE[0]}")
 
-    msg_step "检查脚本更新..."
+    [[ "$_mode" == auto ]] || msg_step "检查脚本更新..."
     latest=$(get_latest_github_release "$SELF_REPO") || return 1
     latest="${latest#v}"
 
     if [[ "$latest" == "$SCRIPT_VERSION" ]]; then
-        msg_success "已是最新版本 v${SCRIPT_VERSION}"
+        [[ "$_mode" == auto ]] && echo "[auto-update] 已是最新 v${SCRIPT_VERSION}" \
+                               || msg_success "已是最新版本 v${SCRIPT_VERSION}"
         return 0
     fi
 
-    printf "${C_YELLOW}发现新版本: v%s → v%s${C_RESET}\n" "$SCRIPT_VERSION" "$latest"
-    printf "${C_PURPLE}是否更新? [Y/n]: ${C_RESET}"
-    local _yn; read -r _yn
-    [[ "${_yn:-Y}" =~ ^[Nn]$ ]] && return 0
+    if [[ "$_mode" == auto ]]; then
+        echo "[auto-update] 发现新版本 v${SCRIPT_VERSION} → v${latest}，开始更新"
+    else
+        printf "${C_YELLOW}发现新版本: v%s → v%s${C_RESET}\n" "$SCRIPT_VERSION" "$latest"
+        printf "${C_PURPLE}是否更新? [Y/n]: ${C_RESET}"
+        local _yn; read -r _yn
+        [[ "${_yn:-Y}" =~ ^[Nn]$ ]] && return 0
+    fi
 
     # 与脚本同目录建临时文件，确保后续 mv 是同文件系统内的原子替换
     tmp_file=$(mktemp "${self_path}.XXXXXX") || { msg_error "无法创建临时文件"; return 1; }
@@ -5381,13 +5397,14 @@ self_update() {
 
     if ! curl -fsSL --max-time 60 \
         "https://raw.githubusercontent.com/${SELF_REPO}/v${latest}/vps-mgr.sh" -o "$tmp_file"; then
-        msg_error "下载失败，请检查网络"
+        [[ "$_mode" == auto ]] && echo "[auto-update] 下载失败" >&2 || msg_error "下载失败，请检查网络"
         return 1
     fi
 
     # 语法校验：绝不用损坏的脚本覆盖正在使用的版本
     if ! bash -n "$tmp_file" 2>/dev/null; then
-        msg_error "新版本语法校验失败，已放弃更新"
+        [[ "$_mode" == auto ]] && echo "[auto-update] 语法校验失败，放弃" >&2 \
+                               || msg_error "新版本语法校验失败，已放弃更新"
         return 1
     fi
 
@@ -5396,10 +5413,49 @@ self_update() {
     mv "$tmp_file" "$self_path"
     trap - RETURN
 
+    if [[ "$_mode" == auto ]]; then
+        echo "[auto-update] 已更新到 v${latest}（旧版备份 ${self_path}.bak）"
+        return 0   # 定时器场景不 exec —— 无交互终端，替换文件即可，下次开菜单即新版
+    fi
     msg_success "已更新到 v${latest}（旧版备份: ${self_path}.bak）"
     msg_info "3 秒后重启脚本..."
     sleep 3
     exec "$self_path"
+}
+
+# 安装/开启每日自动更新定时器（仅正式版）。记录当前脚本路径，定时器认这个路径原地替换。
+install_autoupdate() {
+    local _self; _self=$(realpath "${BASH_SOURCE[0]}")
+    cat > /etc/systemd/system/vps-mgr-autoupdate.service <<EOF
+[Unit]
+Description=vps-mgr auto-update (stable releases only)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash ${_self} auto-update
+EOF
+    cat > /etc/systemd/system/vps-mgr-autoupdate.timer <<'EOF'
+[Unit]
+Description=Daily vps-mgr auto-update check
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=3600
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+    systemctl daemon-reload 2>/dev/null || true
+    systemctl enable --now vps-mgr-autoupdate.timer >/dev/null 2>&1 || true
+}
+
+uninstall_autoupdate() {
+    systemctl disable --now vps-mgr-autoupdate.timer >/dev/null 2>&1 || true
+    rm -f /etc/systemd/system/vps-mgr-autoupdate.service /etc/systemd/system/vps-mgr-autoupdate.timer
+    systemctl daemon-reload 2>/dev/null || true
 }
 
 _do_update_menu() {
@@ -5440,6 +5496,10 @@ _do_update_menu() {
 
     printf "\n ${C_GREEN}4.${C_RESET} 一键更新全部有更新的服务\n"
     printf " ${C_GREEN}5.${C_RESET} 本脚本      ${C_GREEN}v%s${C_RESET}  (检查并更新)\n" "$SCRIPT_VERSION"
+    local _au_st
+    systemctl is-active --quiet vps-mgr-autoupdate.timer 2>/dev/null \
+        && _au_st="${C_GREEN}已开启${C_RESET}" || _au_st="${C_DIM}已关闭${C_RESET}"
+    printf " ${C_GREEN}6.${C_RESET} 自动更新    %b  (每天检查，仅正式版)\n" "$_au_st"
     printf " ${C_GREEN}0.${C_RESET} 返回\n"
     printf "\n${C_PURPLE}请选择: ${C_RESET}"
     read -r _upd_ch
@@ -5458,6 +5518,11 @@ _do_update_menu() {
             [[ $_did -eq 0 ]] && printf "${C_GREEN}所有服务均已是最新版本${C_RESET}\n"
             ;;
         5) self_update ;;
+        6) if systemctl is-active --quiet vps-mgr-autoupdate.timer 2>/dev/null; then
+               uninstall_autoupdate; msg_info "自动更新已关闭"
+           else
+               install_autoupdate; msg_success "自动更新已开启（每天检查正式版，预发布不更新）"
+           fi ;;
         0) return ;;
         *) msg_warn "无效选项" ;;
     esac
@@ -8255,6 +8320,10 @@ main() {
     esac
 
     case "${1:-}" in
+        auto-update)
+            command -v curl >/dev/null 2>&1 \
+                || { echo "auto-update 缺少 curl" >&2; exit 1; }
+            self_update auto; return ;;
         quota-check)
             command -v iptables >/dev/null 2>&1 \
                 || { echo "quota-check 模式缺少 iptables" >&2; exit 1; }
