@@ -16,7 +16,7 @@ readonly SNELL_VERSION_OVERRIDE="v5.0.1"
 # SECTION 1: 全局常量
 # ==============================================================================
 
-readonly SCRIPT_VERSION="1.3.1"
+readonly SCRIPT_VERSION="1.3.2"
 readonly SELF_REPO="Bud668/vps-mgr"
 readonly TZ_DEFAULT="Asia/Shanghai"
 readonly WORK_DIR="/opt/proxy-manager"
@@ -2627,13 +2627,36 @@ _cur=$(timedatectl show -p Timezone --value 2>/dev/null)
 timedatectl set-timezone "$_tz" && logger "sync-timezone: updated $_cur -> $_tz"
 EOF
     chmod +x /usr/local/bin/sync-timezone.sh
-    # 每天 03:00 执行，避免高峰期
-    if ! crontab -l 2>/dev/null | grep -q "sync-timezone"; then
-        (crontab -l 2>/dev/null || true; echo "0 3 * * * /usr/local/bin/sync-timezone.sh") | crontab -
-        echo -e "  ${GREEN}✓ 时区自动同步: cron 每天 03:00${NC}"
-    else
-        echo -e "  ${GREEN}✓ 时区自动同步: cron 已存在${NC}"
+    # 旧版用 cron，改用 systemd 定时器（精准可控、日志走 journal、无 MTA 邮件噪音）。
+    # 先清掉旧 cron 条目，避免和定时器重复执行。
+    if crontab -l 2>/dev/null | grep -q "sync-timezone"; then
+        crontab -l 2>/dev/null | grep -v "sync-timezone" | crontab - 2>/dev/null || true
     fi
+    cat > /etc/systemd/system/sync-timezone.service <<'EOF'
+[Unit]
+Description=Sync system timezone from geo-IP
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/sync-timezone.sh
+EOF
+    cat > /etc/systemd/system/sync-timezone.timer <<'EOF'
+[Unit]
+Description=Daily timezone sync (Shanghai 03:00)
+
+[Timer]
+OnCalendar=*-*-* 03:00:00 Asia/Shanghai
+RandomizedDelaySec=1800
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+    systemctl daemon-reload 2>/dev/null || true
+    systemctl enable --now sync-timezone.timer >/dev/null 2>&1
+    echo -e "  ${GREEN}✓ 时区自动同步: systemd 每天 03:00（上海时区）${NC}"
 
     # NTP 时间同步
     if timedatectl show 2>/dev/null | grep -q "NTPSynchronized=yes"; then
