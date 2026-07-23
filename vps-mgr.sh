@@ -16,7 +16,7 @@ readonly SNELL_VERSION_OVERRIDE="v5.0.1"
 # SECTION 1: 全局常量
 # ==============================================================================
 
-readonly SCRIPT_VERSION="1.3.3"
+readonly SCRIPT_VERSION="1.3.4"
 readonly SELF_REPO="Bud668/vps-mgr"
 readonly TZ_DEFAULT="Asia/Shanghai"
 readonly WORK_DIR="/opt/proxy-manager"
@@ -1636,14 +1636,24 @@ toggle_ipv6() {
             fi
         fi
 
-        # 5. 最终检测（轮询，最多等 5s）
-        for _i6w in {1..5}; do ip -6 addr | grep -q "global" && break; sleep 1; done
-        if ip -6 addr | grep -q "global"; then
-            echo -e "${GREEN}✓ IPv6 已成功开启并获取到公网地址！${NC}"
-            ip -6 addr | grep "global" | awk '{print "   IP: " $2}'
-        elif ip -6 addr | grep -q "inet6"; then
-            echo -e "${YELLOW}✓ IPv6 协议栈已开启 (仅本地链路)。${NC}"
-            echo -e "注意: 未获取到公网 IP，可能需要您的网络环境支持 DHCPv6 或重启生效。"
+        # 5. 最终检测：DAD 地址检测与路由收敛需数秒，以【真实出网】为准、多试几次，
+        # 避免地址还在 tentative 就误判失败（旧逻辑只 grep 一次 global，脆而不准）。
+        local _v6ip=""
+        for _i6w in $(seq 1 10); do
+            if ping -6 -c1 -W2 2606:4700:4700::1111 >/dev/null 2>&1 \
+               || ping -6 -c1 -W2 2001:4860:4860::8888 >/dev/null 2>&1; then
+                _v6ip=$(ip -6 addr show scope global 2>/dev/null | awk '/inet6/{print $2; exit}')
+                break
+            fi
+            sleep 1
+        done
+        if [ -n "$_v6ip" ]; then
+            echo -e "${GREEN}✓ IPv6 已开启并可出网：${_v6ip}${NC}"
+        elif ip -6 addr show scope global 2>/dev/null | grep -q inet6; then
+            _v6ip=$(ip -6 addr show scope global 2>/dev/null | awk '/inet6/{print $2; exit}')
+            echo -e "${YELLOW}✓ 已配置全局地址 ${_v6ip}，出网暂不通（供应商未就绪/需重启，或该网络无 IPv6 出口）${NC}"
+        elif ip -6 addr | grep -q inet6; then
+            echo -e "${YELLOW}✓ IPv6 协议栈已开启（仅本地链路，未获取公网地址）${NC}"
         else
             echo -e "${RED}! IPv6 开启失败。可能需要重启服务器。${NC}"
         fi
