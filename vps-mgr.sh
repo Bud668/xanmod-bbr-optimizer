@@ -16,7 +16,7 @@ readonly SNELL_VERSION_OVERRIDE="v5.0.1"
 # SECTION 1: 全局常量
 # ==============================================================================
 
-readonly SCRIPT_VERSION="1.3.2"
+readonly SCRIPT_VERSION="1.3.3"
 readonly SELF_REPO="Bud668/vps-mgr"
 readonly TZ_DEFAULT="Asia/Shanghai"
 readonly WORK_DIR="/opt/proxy-manager"
@@ -1614,7 +1614,12 @@ toggle_ipv6() {
             if [ -n "$_v6_addr" ]; then
                 echo -e "${CYAN}正在应用静态 IPv6 配置 ($iface)...${NC}"
                 ip -6 addr add "$_v6_addr" dev "$iface" 2>/dev/null || true
-                [ -n "$_v6_gw" ] && ip -6 route add default via "$_v6_gw" dev "$iface" 2>/dev/null || true
+                # 网关可能在不同子网(路由型/64,如 Swiftnode)——普通 add 会因"不在链路"失败，
+                # 回退加 onlink 标志强制视为直连。on-link 网关走前一条即可。
+                if [ -n "$_v6_gw" ]; then
+                    ip -6 route add default via "$_v6_gw" dev "$iface" 2>/dev/null \
+                        || ip -6 route add default via "$_v6_gw" dev "$iface" onlink 2>/dev/null || true
+                fi
                 _v6_applied=1
             fi
         done
